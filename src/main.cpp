@@ -1036,7 +1036,14 @@ bool performOtaUpdate(String& error) {
 
   Serial.printf("[OTA] Downloading %s (%u bytes)\n", latest.c_str(), expectedSize);
   showColor(CRGB::Blue);
-  WiFiClient* stream = http.getStreamPtr();
+  auto* stream = http.getStreamPtr();
+  if (!stream) {
+    Update.abort();
+    mbedtls_md_free(&shaContext);
+    http.end();
+    error = "Connessione download non disponibile.";
+    return false;
+  }
   uint8_t buffer[1024];
   uint32_t remaining = expectedSize;
   uint32_t written = 0;
