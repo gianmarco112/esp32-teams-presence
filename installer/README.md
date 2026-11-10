@@ -5,9 +5,10 @@ Pagina web per installare Teams Presence su ESP32-WROOM-32D tramite USB, con Web
 ## Pubblicazione GitHub Pages
 
 1. Aprire **Settings → Pages** nel repository.
-2. In **Build and deployment → Source**, selezionare **GitHub Actions**.
-3. Il workflow `.github/workflows/pages.yml` pubblica automaticamente il contenuto di `installer/` alla root del sito.
-4. URL previsto: https://gianmarco112.github.io/esp32-teams-presence/
+2. In **Build and deployment → Source**, selezionare **GitHub Actions** e salvare.
+3. Questo passaggio iniziale è manuale: il workflow non può attivare GitHub Pages da solo con il token standard di Actions.
+4. Il workflow `.github/workflows/pages.yml` pubblica automaticamente il contenuto di `installer/` alla root del sito.
+5. URL previsto: https://gianmarco112.github.io/esp32-teams-presence/
 
 ## Pubblicazione delle release firmware
 
