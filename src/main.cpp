@@ -368,7 +368,8 @@ void handleEntraSave() {
     setSolid(CRGB::Black);
   }
   oauthError = "";
-  handleSettingsRedirect();
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
 void handleSettingsRedirect() {
