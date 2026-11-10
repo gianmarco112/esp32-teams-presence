@@ -1,4 +1,4 @@
-import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.5.6/bundle.js";
+import { ESPLoader, Transport } from "esptool-js";
 
 const OWNER = "gianmarco112";
 const REPO = "esp32-teams-presence";
@@ -53,7 +53,7 @@ async function loadReleases() {
     $("latest-notes").textContent = latestRelease.body?.trim() || "Release stabile di Teams Presence.";
     $("install-latest").disabled = !hasRequiredAssets(latestRelease);
     if (!hasRequiredAssets(latestRelease)) {
-      setStatus("Release trovata, ma mancano i file firmware richiesti (manifest o binari).", "error");
+      setStatus("Release trovata, ma manca manifest.json o non contiene la build necessaria.", "error");
     } else {
       setStatus("Firmware disponibile. Collega l’ESP32 per iniziare.", "success");
     }
@@ -115,7 +115,10 @@ async function installRelease(release) {
     const manifest = await fetchManifest(release);
     if (!manifest.builds?.length) throw new Error("Manifest non valido: nessun build trovato.");
     const build = manifest.builds[0];
+    if (build.chipFamily !== "ESP32") throw new Error("Firmware incompatibile: il manifest non dichiara ESP32.");
     if (!build.parts?.length) throw new Error("Manifest non valido: nessuna partizione definita.");
+
+    const manifestAsset = assetFor(release, "manifest.json");
     const selectedPort = await navigator.serial.requestPort();
     transport = new Transport(selectedPort, true);
     const terminal = {
@@ -126,21 +129,30 @@ async function installRelease(release) {
     esploader = new ESPLoader({
       transport,
       baudrate: 460800,
-      romBaudrate: 115200,
       terminal,
       debugLogging: false
     });
+
     setProgress(2, "Connessione", "Rilevamento ESP32 in corso…");
     const chip = await esploader.main();
     log(`Chip rilevato: ${chip}`);
+    if (!String(chip).toUpperCase().startsWith("ESP32")) {
+      throw new Error(`Chip non compatibile con questo firmware: ${chip}`);
+    }
+
     const fileParts = [];
     for (const part of build.parts) {
-      const url = new URL(part.path, assetFor(release, "manifest.json").browser_download_url);
+      if (!part.path || !Number.isInteger(Number(part.offset)) || Number(part.offset) < 0) {
+        throw new Error("Manifest non valido: percorso o offset di una partizione non valido.");
+      }
+      const url = new URL(part.path, manifestAsset.browser_download_url);
       const response = await fetch(url);
-      if (!response.ok) throw new Error(`Download firmware fallito: ${part.path}`);
-      const buffer = await response.arrayBuffer();
-      fileParts.push({ data: bufferToBinaryString(buffer), address: Number(part.offset) });
+      if (!response.ok) throw new Error(`Download firmware fallito: ${part.path} (HTTP ${response.status}).`);
+      const data = new Uint8Array(await response.arrayBuffer());
+      if (!data.length) throw new Error(`Il file firmware è vuoto: ${part.path}`);
+      fileParts.push({ data, address: Number(part.offset) });
     }
+
     setProgress(8, "Scrittura firmware", "Non scollegare il dispositivo.");
     await esploader.writeFlash({
       fileArray: fileParts,
@@ -152,12 +164,9 @@ async function installRelease(release) {
       reportProgress(fileIndex, written, total) {
         const percent = total ? 8 + (written / total) * 88 : 8;
         setProgress(percent, "Scrittura firmware", `File ${fileIndex + 1}: ${Math.round(written / Math.max(total, 1) * 100)}%`);
-      },
-      calculateMD5Hash: async (image) => {
-        const hash = await crypto.subtle.digest("MD5", image);
-        return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("");
       }
     });
+
     setProgress(98, "Riavvio", "Firmware scritto. Riavvio ESP32…");
     await esploader.after("hard_reset");
     setProgress(100, "Installazione completata", "Puoi scollegare l’ESP32.");
@@ -173,16 +182,6 @@ async function installRelease(release) {
     transport = null;
     esploader = null;
   }
-}
-
-function bufferToBinaryString(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let result = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    result += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return result;
 }
 
 $("install-latest").addEventListener("click", () => {
