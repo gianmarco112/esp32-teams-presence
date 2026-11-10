@@ -6,6 +6,7 @@ on:
     paths:
       - "installer/**"
       - ".github/workflows/pages.yml"
+      - "scripts/generate_ota_manifest.py"
   release:
     types: [published]
   workflow_dispatch:
@@ -54,6 +55,17 @@ jobs:
             echo "Downloading release assets for $tag"
             gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$target"
           done
+
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq "[.[] | select(.draft == false)] | sort_by(.published_at) | last | .tag_name // empty")
+          if [[ -n "$latest_tag" ]]; then
+            python3 scripts/generate_ota_manifest.py \
+              --version "$latest_tag" \
+              --firmware "_site/firmware/$latest_tag/firmware.bin" \
+              --base-url "https://gianmarco112.github.io/esp32-teams-presence/firmware/$latest_tag/firmware.bin" \
+              --output "_site/latest.json"
+          else
+            echo "No published release available for OTA yet."
+          fi
 
       - name: Upload installer
         uses: actions/upload-pages-artifact@v4
