@@ -1,0 +1,5 @@
+.pio/
+.vscode/
+include/config.h
+dist/
+__pycache__/
