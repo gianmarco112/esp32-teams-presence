@@ -85,13 +85,59 @@ bool httpsRequest(const String& url, const String& method,
   if (method == "POST") {
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
   }
-  if (bearer.length()) http.addHeader("Authorization", "Bearer " + bearer.toString());
+  if (bearer.length()) http.addHeader("Authorization", "Bearer " + bearer);
 
   status = (method == "POST") ? http.POST(body) : http.GET();
   if (status > 0) response = http.getString();
   http.end();
   return status > 0;
 }
+
+void setSolid(const CRGB& color) {
+  fill_solid(leds, LED_COUNT, color);
+  FastLED.show();
+}
+
+void setErrorBlink() {
+  static bool on = false;
+  on = !on;
+  setSolid(on ? CRGB::Blue : CRGB::Black);
+}
+
+String htmlEscape(String value) {
+  value.replace("&", "&amp;");
+  value.replace("<", "&lt;");
+  value.replace(">", "&gt;");
+  value.replace("\"", "&quot;");
+  return value;
+}
+
+String pageHtml() {
+  String html = F(
+    "<!doctype html><html lang='it'><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>Teams Presence</title><style>"
+    "body{font-family:system-ui;max-width:620px;margin:35px auto;padding:0 18px;"
+    "background:#101722;color:#eef3fa}main{background:#1b2736;padding:24px;"
+    "border-radius:16px}a,button{color:white;background:#2563eb;padding:12px 16px;"
+    "border:0;border-radius:9px;text-decoration:none;display:inline-block}"
+    ".muted{color:#a9b8ca}.code{font-size:2rem;letter-spacing:3px;font-weight:700}"
+    "</style></head><body><main><h1>Teams Presence</h1>"
+  );
+  html += "<p class='muted'>Dispositivo ESP32-WROOM-32D</p>";
+  html += "<h2>Stato: " + htmlEscape(presenceText) + "</h2>";
+  html += "<p>Attività: " + htmlEscape(activityText) + "</p>";
+  html += "<p>Account: " + htmlEscape(authUser) + "</p>";
+
+  if (deviceLoginPending) {
+    html += "<hr><h2>Accedi a Microsoft</h2><p>Apri il link e inserisci il codice:</p>";
+    html += "<p><a target='_blank' href='" + htmlEscape(verificationUri) + "'>Apri Microsoft Device Login</a></p>";
+    html += "<p class='code'>" + htmlEscape(userCode) + "</p>";
+    html += "<p class='muted'>Lascia acceso questo dispositivo durante l'autorizzazione.</p>";
+  } else if (!graphReady) {
+    html += "<hr><p>Microsoft non è ancora collegato.</p>";
+    html += "<form method='post' action='/login'><button>Collega Microsoft</button></form>";
+  }
 else {
     html += "<hr><p>Account Microsoft collegato.</p>";
     html += "<form method='post' action='/logout'><button>Disconnetti account</button></form>";
