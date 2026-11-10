@@ -39,8 +39,8 @@ CRGB leds[LED_MAX_COUNT];
 LedRenderer ledRenderer;
 LedGeometry ledGeometry = LedGeometry::Strip;
 LedEffect ledEffect = LedEffect::Static;
-uint8_t matrixWidth = 8;
-uint8_t matrixHeight = 8;
+uint16_t matrixWidth = 8;
+uint16_t matrixHeight = 8;
 bool matrixSerpentine = true;
 uint16_t activeLeds = LED_COUNT;
 uint32_t pollIntervalMs = PRESENCE_POLL_MS;
@@ -669,11 +669,11 @@ void handleSettingsSave() {
   }
   if (server.hasArg("width")) {
     matrixWidth = constrain(server.arg("width").toInt(), 1, LED_MAX_COUNT);
-    prefs.putUChar("width", matrixWidth);
+    prefs.putUShort("width", matrixWidth);
   }
   if (server.hasArg("height")) {
     matrixHeight = constrain(server.arg("height").toInt(), 1, LED_MAX_COUNT);
-    prefs.putUChar("height", matrixHeight);
+    prefs.putUShort("height", matrixHeight);
   }
   if (server.hasArg("mapping")) {
     matrixSerpentine = server.arg("mapping") == "serpentine";
@@ -686,6 +686,7 @@ void handleSettingsSave() {
     prefs.putString("manual", manualState);
   }
 
+  ledRenderer.begin(leds, LED_MAX_COUNT, activeLeds);
   if (manualState.length()) {
     applyManualState();
   } else if (graphReady) {
@@ -1309,8 +1310,8 @@ void setup() {
   FastLED.setBrightness((brightnessPct * 255 + 50) / 100);
   ledGeometry = (LedGeometry)constrain(prefs.getUChar("geometry", 0), 0, 2);
   ledEffect = (LedEffect)constrain(prefs.getUChar("effect", 0), 0, 6);
-  matrixWidth = constrain(prefs.getUChar("width", 8), 1, LED_MAX_COUNT);
-  matrixHeight = constrain(prefs.getUChar("height", 8), 1, LED_MAX_COUNT);
+  matrixWidth = constrain(prefs.getUShort("width", 8), 1, LED_MAX_COUNT);
+  matrixHeight = constrain(prefs.getUShort("height", 8), 1, LED_MAX_COUNT);
   matrixSerpentine = prefs.getBool("serpentine", true);
   ledRenderer.begin(leds, LED_MAX_COUNT, activeLeds);
   setLedPattern(BOOT_PATTERN,
