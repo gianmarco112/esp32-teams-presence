@@ -2,7 +2,9 @@ name: Build ESP32 firmware
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "release-test/**"
     tags:
       - "v*"
   pull_request:
@@ -40,9 +42,16 @@ jobs:
         run: pio run -e esp32dev
 
       - name: Package firmware binaries
-        env:
-          BUILD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('dev-{0}', github.sha) }}
-        run: python scripts/package_firmware.py --version "$BUILD_VERSION" --output dist
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/heads/release-test/* ]]; then
+            BUILD_VERSION="${GITHUB_REF_NAME#release-test/}"
+          elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            BUILD_VERSION="$GITHUB_REF_NAME"
+          else
+            BUILD_VERSION="dev-$GITHUB_SHA"
+          fi
+          python scripts/package_firmware.py --version "$BUILD_VERSION" --output dist
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -53,22 +62,28 @@ jobs:
           retention-days: 30
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-test/') || startsWith(github.ref, 'refs/heads/release-test/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          release_flags=()
-          release_title="Teams Presence $GITHUB_REF_NAME"
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            release_flags+=(--prerelease)
-            release_title="Teams Presence $GITHUB_REF_NAME (test build)"
+          if [[ "$GITHUB_REF" == refs/heads/release-test/* ]]; then
+            RELEASE_TAG="${GITHUB_REF_NAME#release-test/}"
+          else
+            RELEASE_TAG="$GITHUB_REF_NAME"
           fi
 
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          release_flags=()
+          release_title="Teams Presence $RELEASE_TAG"
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            release_flags+=(--prerelease)
+            release_title="Teams Presence $RELEASE_TAG (test build)"
+          fi
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/* \
+            gh release create "$RELEASE_TAG" dist/* \
               --repo "$GITHUB_REPOSITORY" \
               --title "$release_title" \
               --generate-notes \
