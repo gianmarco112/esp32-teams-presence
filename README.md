@@ -120,17 +120,24 @@ See [docs/wiring.md](docs/wiring.md) for the wiring reference.
 
 ## LED status mapping
 
-| Microsoft presence | LED indication |
+| State / condition | LED indication |
 |---|---|
-| Available | 🟢 Green |
-| Busy | 🔴 Red |
-| Do Not Disturb | 🟣 Purple |
-| Away | 🟡 Yellow |
-| Be Right Back | 🟠 Orange |
+| Boot sequence | ⚪ Two white flashes |
+| Trying saved Wi-Fi credentials | 🟡 Slow yellow blink |
+| Wi-Fi setup access point active | 🩵 Two cyan flashes, repeating |
+| Wi-Fi connected | 🟢 Two green flashes |
+| Wi-Fi unavailable / setup timeout | 🔴 Three red flashes, repeating |
+| Wi-Fi ready, waiting for Microsoft configuration or login | 🔵 Slow blue pulse |
+| Microsoft Device Code sign-in pending | 🟣 Purple pulse |
+| Graph/API error | 🩷 Three magenta flashes, repeating |
+| Available | 🟢 Solid green |
+| Busy | 🔴 Solid red |
+| Do Not Disturb | 🟣 Solid purple |
+| Away | 🟡 Solid yellow |
+| Be Right Back | 🟠 Solid orange |
 | Offline | ⚫ Off |
-| Unknown / error | 🔵 Blue blinking |
 
-A manual LED state can be selected from the local control panel. While manual mode is active, automatic presence changes do not override the selected LED state. Select **Automatic** to return to Teams-based indication.
+The diagnostic patterns are shown during boot and Wi-Fi provisioning, even when a manual LED state was saved. After Wi-Fi connects, a saved manual state resumes taking priority over automatic presence changes. Select **Automatic** in the local control panel to return to Teams-based indication.
 
 ## First-time setup
 
@@ -138,15 +145,17 @@ A manual LED state can be selected from the local control panel. While manual mo
 
 1. Flash the firmware using the [web installer](#web-firmware-installer) or PlatformIO.
 2. Power on the ESP32.
-3. If no saved Wi-Fi network is available, the device starts the **`TeamsPresence-Setup`** access point.
-4. Connect a phone or computer to that Wi-Fi network and complete the WiFiManager network selection page.
-5. Find the device's IP address in the PlatformIO serial monitor (115200 baud).
+3. If Wi-Fi cannot be connected, the device starts the **`TeamsPresence-Setup`** access point (open network, no password). The portal remains available for up to 10 minutes.
+4. Connect a phone or computer to that Wi-Fi network. If the captive portal does not open automatically, browse to **`http://192.168.4.1/`**.
+5. Find the device's IP address in the PlatformIO serial monitor (115200 baud). Wi-FiManager debug output is enabled.
 6. Open `http://<device-ip>/` from a device on the same local network.
 7. In the local page, enter your organisation's **Directory (tenant) ID** and **Application (client) ID**, then select **Save Microsoft configuration**.
 8. Select **Connect Microsoft**, open the Microsoft device sign-in page, and enter the displayed code.
 9. After sign-in completes, the ESP32 begins polling Microsoft Graph and updates the LEDs.
 
 The local page also provides controls for LED count, brightness, polling interval, manual LED state, Microsoft sign-out, and Wi-Fi reconfiguration.
+
+**Reset saved Wi-Fi credentials:** hold the ESP32 DevKit **BOOT** button (GPIO0) while powering on or pressing RESET. The firmware clears the saved Wi-Fi settings and starts the setup access point again. The button only needs to be held during startup.
 
 ## Microsoft Entra ID configuration
 
@@ -333,7 +342,10 @@ Secure Boot, Flash Encryption, OTA firmware updates, and production hardening ar
 
 | Symptom | Checks |
 |---|---|
-| The setup Wi-Fi is not visible | Restart the ESP32 and check the serial output at 115200 baud. Confirm that the board has power. |
+| The setup Wi-Fi is not visible | Check whether the yellow Wi-Fi-connecting pattern changes to repeating cyan portal flashes. Open `http://192.168.4.1/` after connecting to `TeamsPresence-Setup`. If old Wi-Fi credentials are stuck, hold BOOT (GPIO0) during startup to erase them. Check the serial monitor at 115200 baud for the exact WiFiManager result. |
+| Three repeating red flashes | Wi-Fi could not be connected or the setup portal timed out. Restart the ESP32; hold BOOT during startup to force fresh Wi-Fi setup. |
+| Slow blue pulse | Wi-Fi is connected. Open the IP address printed on Serial and configure Tenant ID and Client ID, then sign in to Microsoft. |
+| Two repeating cyan flashes | The `TeamsPresence-Setup` access point is active. Connect to it and open `http://192.168.4.1/`. |
 | The local page does not open | Confirm that the computer is on the same network and use the IP address printed to Serial. |
 | Microsoft sign-in fails | Check the Tenant ID and Client ID saved on the ESP32, public-client flow setting, delegated `Presence.Read` permission, and tenant consent policy. |
 | LEDs flicker or show random colours | Check the 5 V supply and common ground. Try a data-line resistor and a 5 V-compatible level shifter. |
