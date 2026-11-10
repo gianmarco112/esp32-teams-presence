@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101827">
+  <title>Teams Presence — Firmware Installer</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="https://github.com/gianmarco112/esp32-teams-presence" aria-label="Repository GitHub">
+        <span class="brand-mark">TP</span><span>Teams Presence</span>
+      </a>
+      <span class="version-tag">ESP32 INSTALLER</span>
+    </header>
+
+    <section class="hero">
+      <div class="eyebrow"><span class="pulse"></span> INSTALLAZIONE FIRMWARE</div>
+      <h1>Il tuo stato Teams,<br><span>sempre visibile.</span></h1>
+      <p class="intro">Installa il firmware sul tuo ESP32-WROOM-32D direttamente dal browser. Non servono IDE o tool aggiuntivi.</p>
+
+      <section class="panel install-panel">
+        <div class="panel-heading">
+          <div>
+            <div class="panel-kicker">INSTALLAZIONE CONSIGLIATA</div>
+            <h2>Ultima versione stabile</h2>
+          </div>
+          <span class="latest-pill">LATEST</span>
+        </div>
+        <div class="release-line">
+          <strong id="latest-version">Caricamento…</strong>
+          <span id="latest-date" class="muted"></span>
+        </div>
+        <p id="latest-notes" class="notes">Recupero informazioni della release…</p>
+        <button id="install-latest" class="primary" disabled>
+          <span class="button-icon">↧</span> Collega e installa
+        </button>
+        <p class="hint">Collega l’ESP32 via USB e consenti l’accesso alla porta seriale quando richiesto.</p>
+      </section>
+
+      <section class="panel versions-panel">
+        <button id="versions-toggle" class="versions-toggle" aria-expanded="false">
+          <span><span class="panel-kicker">AVANZATE</span><strong>Versioni precedenti</strong></span>
+          <span id="toggle-chevron" class="chevron">⌄</span>
+        </button>
+        <div id="versions-content" class="versions-content" hidden>
+          <p class="muted small">Seleziona una release specifica per effettuare un downgrade o reinstallare una versione.</p>
+          <div id="release-list" class="release-list"><div class="empty">Caricamento versioni…</div></div>
+        </div>
+      </section>
+
+      <section id="progress-panel" class="panel progress-panel" hidden aria-live="polite">
+        <div class="progress-top"><strong id="progress-title">Preparazione…</strong><span id="progress-percent">0%</span></div>
+        <div class="progress-track"><div id="progress-bar"></div></div>
+        <p id="progress-message" class="muted small">In attesa del dispositivo.</p>
+        <pre id="flash-log" class="flash-log"></pre>
+      </section>
+
+      <section class="requirements">
+        <div class="requirement"><span class="req-icon">USB</span><span><strong>Connessione USB</strong><small>Cavo dati, non solo ricarica</small></span></div>
+        <div class="requirement"><span class="req-icon">WEB</span><span><strong>Chrome o Edge</strong><small>Web Serial su desktop</small></span></div>
+        <div class="requirement"><span class="req-icon">ESP</span><span><strong>ESP32-WROOM-32D</strong><small>Board supportata</small></span></div>
+      </section>
+
+      <div id="status" class="status" role="status">Controllo disponibilità firmware…</div>
+    </section>
+
+    <footer>
+      <span>Open source · <a href="https://github.com/gianmarco112/esp32-teams-presence">GitHub repository</a></span>
+      <span>Teams Presence Installer</span>
+    </footer>
+  </main>
+  <script type="module" src="./installer.js"></script>
+</body>
+</html>
