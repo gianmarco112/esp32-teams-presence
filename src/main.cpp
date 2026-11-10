@@ -40,6 +40,9 @@ String manualState;  // empty = automatic (follows Teams presence)
 void pollPresence();
 WebServer server(WEB_PORT);
 Preferences prefs;
+WiFiManager wifiManager;
+bool wifiPortalActive = false;
+bool servicesStarted = false;
 
 String accessToken;
 String refreshToken;
@@ -61,6 +64,48 @@ uint32_t lastPresencePoll = 0;
 bool deviceLoginPending = false;
 bool graphReady = false;
 bool wifiReady = false;
+
+struct LedPhase {
+  CRGB color;
+  uint16_t durationMs;
+};
+
+const LedPhase BOOT_PATTERN[] = {
+  {CRGB::White, 120}, {CRGB::Black, 140},
+  {CRGB::White, 120}, {CRGB::Black, 500}
+};
+const LedPhase WIFI_CONNECTING_PATTERN[] = {
+  {CRGB::Yellow, 250}, {CRGB::Black, 450}
+};
+const LedPhase WIFI_PORTAL_PATTERN[] = {
+  {CRGB::Cyan, 180}, {CRGB::Black, 160},
+  {CRGB::Cyan, 180}, {CRGB::Black, 900}
+};
+const LedPhase WIFI_FAILED_PATTERN[] = {
+  {CRGB::Red, 120}, {CRGB::Black, 130},
+  {CRGB::Red, 120}, {CRGB::Black, 130},
+  {CRGB::Red, 120}, {CRGB::Black, 1000}
+};
+const LedPhase WIFI_CONNECTED_PATTERN[] = {
+  {CRGB::Green, 130}, {CRGB::Black, 130},
+  {CRGB::Green, 130}, {CRGB::Black, 700}
+};
+const LedPhase WAITING_MICROSOFT_PATTERN[] = {
+  {CRGB::Blue, 850}, {CRGB::Black, 1150}
+};
+const LedPhase LOGIN_PENDING_PATTERN[] = {
+  {CRGB::Purple, 350}, {CRGB::Black, 350}
+};
+const LedPhase GRAPH_ERROR_PATTERN[] = {
+  {CRGB::Magenta, 140}, {CRGB::Black, 130},
+  {CRGB::Magenta, 140}, {CRGB::Black, 130},
+  {CRGB::Magenta, 140}, {CRGB::Black, 900}
+};
+
+const LedPhase* currentLedPattern = nullptr;
+size_t currentLedPatternLength = 0;
+size_t currentLedPhase = 0;
+uint32_t currentLedPhaseStarted = 0;
 
 const char* graphPresenceUrl = "https://graph.microsoft.com/v1.0/me/presence";
 
@@ -142,9 +187,35 @@ void showColor(const CRGB& c) {
   FastLED.show();
 }
 
-// A manual state locks the LEDs: automatic updates are ignored until it is cleared.
+void setLedPattern(const LedPhase* phases, size_t count, const char* description) {
+  currentLedPattern = phases;
+  currentLedPatternLength = count;
+  currentLedPhase = 0;
+  currentLedPhaseStarted = millis();
+  if (count > 0) showColor(phases[0].color);
+  Serial.printf("[LED] %s\\n", description);
+}
+
+void stopLedPattern() {
+  currentLedPattern = nullptr;
+  currentLedPatternLength = 0;
+}
+
+void updateLedPattern() {
+  if (!currentLedPattern || currentLedPatternLength == 0) return;
+  const uint32_t now = millis();
+  if ((uint32_t)(now - currentLedPhaseStarted) <
+      currentLedPattern[currentLedPhase].durationMs) return;
+
+  currentLedPhase = (currentLedPhase + 1) % currentLedPatternLength;
+  currentLedPhaseStarted = now;
+  showColor(currentLedPattern[currentLedPhase].color);
+}
+
+// A manual state locks normal presence indications. Boot and Wi-Fi diagnostics bypass that lock.
 void setSolid(const CRGB& c) {
   if (manualState.length()) return;
+  stopLedPattern();
   showColor(c);
 }
 
@@ -166,9 +237,10 @@ void applyManualState() {
 }
 
 void setErrorBlink() {
-  static bool on = false;
-  on = !on;
-  setSolid(on ? CRGB::Blue : CRGB::Black);
+  if (manualState.length()) return;
+  setLedPattern(GRAPH_ERROR_PATTERN,
+                sizeof(GRAPH_ERROR_PATTERN) / sizeof(GRAPH_ERROR_PATTERN[0]),
+                "Graph/API error: 3 magenta flashes");
 }
 
 String htmlEscape(String s) {
@@ -329,7 +401,11 @@ void handleLogin() {
   deviceLoginPending = true;
   nextDevicePoll = millis() + devicePollInterval * 1000UL;
   oauthError = "";
-  setSolid(CRGB::Purple);
+  if (!manualState.length()) {
+    setLedPattern(LOGIN_PENDING_PATTERN,
+                  sizeof(LOGIN_PENDING_PATTERN) / sizeof(LOGIN_PENDING_PATTERN[0]),
+                  "Microsoft Device Code login pending: purple pulse");
+  }
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -478,7 +554,11 @@ void pollDeviceCode() {
   if ((uint32_t)(millis() - deviceCodeStartedAt) >= deviceCodeExpires * 1000UL) {
     deviceLoginPending = false;
     oauthError = "Codice scaduto. Avvia nuovamente il login.";
-    setSolid(CRGB::Blue);
+    if (!manualState.length()) {
+      setLedPattern(WAITING_MICROSOFT_PATTERN,
+                    sizeof(WAITING_MICROSOFT_PATTERN) / sizeof(WAITING_MICROSOFT_PATTERN[0]),
+                    "Microsoft login required: slow blue pulse");
+    }
     return;
   }
 
@@ -519,7 +599,11 @@ void pollDeviceCode() {
   if (err == "authorization_declined" || err == "expired_token" ||
       err == "bad_verification_code") {
     deviceLoginPending = false;
-    setSolid(CRGB::Blue);
+    if (!manualState.length()) {
+      setLedPattern(WAITING_MICROSOFT_PATTERN,
+                    sizeof(WAITING_MICROSOFT_PATTERN) / sizeof(WAITING_MICROSOFT_PATTERN[0]),
+                    "Microsoft authorization failed: slow blue pulse");
+    }
   }
 }
 
@@ -553,7 +637,11 @@ void pollPresence() {
     if (!refreshAccessToken()) {
       graphReady = false;
       presenceText = "Sessione scaduta: riconnettere Microsoft";
-      setSolid(CRGB::Blue);
+      if (!manualState.length()) {
+        setLedPattern(WAITING_MICROSOFT_PATTERN,
+                      sizeof(WAITING_MICROSOFT_PATTERN) / sizeof(WAITING_MICROSOFT_PATTERN[0]),
+                      "Microsoft session expired: slow blue pulse");
+      }
       return;
     }
   }
@@ -570,7 +658,11 @@ void pollPresence() {
     if (!refreshAccessToken()) {
       graphReady = false;
       presenceText = "Autenticazione richiesta";
-      setSolid(CRGB::Blue);
+      if (!manualState.length()) {
+        setLedPattern(WAITING_MICROSOFT_PATTERN,
+                      sizeof(WAITING_MICROSOFT_PATTERN) / sizeof(WAITING_MICROSOFT_PATTERN[0]),
+                      "Microsoft authentication required: slow blue pulse");
+      }
       return;
     }
     if (!httpsRequest(graphPresenceUrl, "GET", "", accessToken, response, status)) return;
@@ -596,9 +688,90 @@ void pollPresence() {
   lastPresencePoll = millis();
 }
 
+void startApplicationServices() {
+  if (servicesStarted || !WiFi.isConnected()) return;
+
+  wifiReady = true;
+  wifiPortalActive = false;
+  Serial.println("[WiFi] Connected successfully.");
+  Serial.print("[WiFi] SSID: ");
+  Serial.println(WiFi.SSID());
+  Serial.print("[WiFi] IP address: http://");
+  Serial.println(WiFi.localIP());
+  setLedPattern(WIFI_CONNECTED_PATTERN,
+                sizeof(WIFI_CONNECTED_PATTERN) / sizeof(WIFI_CONNECTED_PATTERN[0]),
+                "Wi-Fi connected: 2 green flashes");
+
+  configTime(0, 0, "pool.ntp.org", "time.google.com");
+  time_t now = 0;
+  for (int i = 0; i < 30; i++) {
+    time(&now);
+    if (now > 1700000000) break;
+    updateLedPattern();
+    delay(500);
+  }
+  if (now <= 1700000000) {
+    Serial.println("[TIME] NTP not synchronised yet; TLS requests may fail until time is available.");
+  } else {
+    Serial.println("[TIME] NTP synchronised.");
+  }
+
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/login", HTTP_POST, handleLogin);
+  server.on("/entra", HTTP_POST, handleEntraSave);
+  server.on("/logout", HTTP_POST, handleLogout);
+  server.on("/wifi", HTTP_POST, handleWifiChange);
+  server.on("/settings", HTTP_GET, handleSettingsRedirect);
+  server.on("/settings", HTTP_POST, handleSettingsSave);
+  server.begin();
+  servicesStarted = true;
+
+  Serial.print("[HTTP] Configuration page: http://");
+  Serial.println(WiFi.localIP());
+
+  if (refreshToken.length() && entraConfigured()) {
+    Serial.println("[Microsoft] Trying to restore the saved Microsoft session...");
+    if (refreshAccessToken()) {
+      authUser = "Account autenticato (endpoint /me)";
+      graphReady = true;
+      Serial.println("[Microsoft] Session restored.");
+      if (manualState.length()) {
+        stopLedPattern();
+        applyManualState();
+      } else {
+        setSolid(CRGB::Green);
+      }
+      pollPresence();
+      return;
+    }
+    graphReady = false;
+    Serial.println("[Microsoft] Refresh token invalid or expired; sign in from the local page.");
+  } else if (refreshToken.length() && !entraConfigured()) {
+    Serial.println("[Microsoft] Removing a refresh token without matching Entra IDs.");
+    prefs.remove("refresh");
+    refreshToken = "";
+  }
+
+  if (manualState.length()) {
+    stopLedPattern();
+    applyManualState();
+  } else {
+    setLedPattern(WAITING_MICROSOFT_PATTERN,
+                  sizeof(WAITING_MICROSOFT_PATTERN) / sizeof(WAITING_MICROSOFT_PATTERN[0]),
+                  "Wi-Fi ready; waiting for Microsoft setup/login: slow blue pulse");
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   delay(300);
+  Serial.println();
+  Serial.println("====================================");
+  Serial.println(" Teams Presence - ESP32 boot");
+  Serial.println(" Serial diagnostics: 115200 baud");
+  Serial.println("====================================");
+  Serial.printf("[BOOT] Flash size: %u bytes\\n", ESP.getFlashChipSize());
+  Serial.printf("[BOOT] Free heap: %u bytes\\n", ESP.getFreeHeap());
 
   prefs.begin("teams-presence", false);
   const String defaultTenant = isGuid(String(MS_TENANT_ID)) ? String(MS_TENANT_ID) : "";
@@ -614,72 +787,95 @@ void setup() {
   FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, LED_MAX_COUNT);
   brightnessPct = constrain(prefs.getUChar("bright", brightnessPct), 1, 100);
   FastLED.setBrightness((brightnessPct * 255 + 50) / 100);
-  if (manualState.length()) applyManualState();
-  else setSolid(CRGB::Blue);
+  setLedPattern(BOOT_PATTERN,
+                sizeof(BOOT_PATTERN) / sizeof(BOOT_PATTERN[0]),
+                "Boot: 2 white flashes");
+
+  // Hold the ESP32 BOOT button (GPIO0) while powering on to forget old Wi-Fi credentials.
+  pinMode(0, INPUT_PULLUP);
+  delay(20);
+  if (digitalRead(0) == LOW) {
+    Serial.println("[WiFi] BOOT button held: erasing saved Wi-Fi credentials.");
+    wifiManager.resetSettings();
+    prefs.putBool("wifiPortal", false);
+  }
 
   WiFi.mode(WIFI_STA);
-  WiFiManager wm;
-  wm.setConfigPortalTimeout(180);
-  wm.setConnectTimeout(30);
-  bool connected;
-  if (prefs.getBool("wifiPortal", false)) {
-    prefs.putBool("wifiPortal", false);
-    // Old credentials are kept until a new network is saved; on timeout, reconnect to them.
-    connected = wm.startConfigPortal("TeamsPresence-Setup");
-    if (!connected) connected = wm.autoConnect("TeamsPresence-Setup");
+  wifiManager.setConfigPortalBlocking(false);
+  wifiManager.setConfigPortalTimeout(600);  // Keep the setup AP available for up to 10 minutes.
+  wifiManager.setConnectTimeout(25);
+  wifiManager.setDebugOutput(true, WM_DEBUG_VERBOSE);
+
+  wifiManager.setAPCallback([](WiFiManager* manager) {
+    wifiPortalActive = true;
+    Serial.println();
+    Serial.println("[WiFi] SETUP ACCESS POINT STARTED.");
+    Serial.print("[WiFi] SSID: ");
+    Serial.println(manager->getConfigPortalSSID());
+    Serial.print("[WiFi] Portal address: http://");
+    Serial.println(WiFi.softAPIP());
+    Serial.println("[WiFi] Connect your phone/PC to this AP, then open http://192.168.4.1/");
+    setLedPattern(WIFI_PORTAL_PATTERN,
+                  sizeof(WIFI_PORTAL_PATTERN) / sizeof(WIFI_PORTAL_PATTERN[0]),
+                  "Wi-Fi setup AP active: 2 cyan flashes");
+  });
+
+  wifiManager.setConfigPortalTimeoutCallback([]() {
+    wifiPortalActive = false;
+    Serial.println("[WiFi] Setup portal timed out. Restart and retry; hold BOOT at power-on to erase saved Wi-Fi credentials.");
+    setLedPattern(WIFI_FAILED_PATTERN,
+                  sizeof(WIFI_FAILED_PATTERN) / sizeof(WIFI_FAILED_PATTERN[0]),
+                  "Wi-Fi setup failed/timed out: 3 red flashes");
+  });
+
+  const bool forcePortal = prefs.getBool("wifiPortal", false);
+  prefs.putBool("wifiPortal", false);
+  Serial.printf("[WiFi] Saved Wi-Fi credentials: %s\\n",
+                wifiManager.getWiFiIsSaved() ? "yes" : "no");
+  setLedPattern(WIFI_CONNECTING_PATTERN,
+                sizeof(WIFI_CONNECTING_PATTERN) / sizeof(WIFI_CONNECTING_PATTERN[0]),
+                "Trying saved Wi-Fi credentials: slow yellow pulse");
+
+  bool connected = false;
+  if (forcePortal) {
+    Serial.println("[WiFi] User requested Wi-Fi reconfiguration; starting setup AP.");
+    wifiManager.startConfigPortal("TeamsPresence-Setup");
+    wifiPortalActive = wifiManager.getConfigPortalActive();
   } else {
-    connected = wm.autoConnect("TeamsPresence-Setup");
+    connected = wifiManager.autoConnect("TeamsPresence-Setup");
+    wifiPortalActive = wifiManager.getConfigPortalActive();
   }
 
-  if (!connected) {
-    Serial.println("Wi-Fi non configurato o timeout. Riavvia per riprovare.");
-    setSolid(CRGB::Red);
-    return;
-  }
-
-  wifiReady = true;
-  Serial.print("Wi-Fi connesso, IP: ");
-  Serial.println(WiFi.localIP());
-
-  configTime(0, 0, "pool.ntp.org", "time.google.com");
-  time_t now = 0;
-  for (int i = 0; i < 30; i++) {
-    time(&now);
-    if (now > 1700000000) break;
-    delay(500);
-  }
-
-  server.on("/", HTTP_GET, handleRoot);
-  server.on("/login", HTTP_POST, handleLogin);
-  server.on("/entra", HTTP_POST, handleEntraSave);
-  server.on("/logout", HTTP_POST, handleLogout);
-  server.on("/wifi", HTTP_POST, handleWifiChange);
-  server.on("/settings", HTTP_GET, handleSettingsRedirect);
-  server.on("/settings", HTTP_POST, handleSettingsSave);
-  server.begin();
-
-  Serial.print("Pagina configurazione: http://");
-  Serial.println(WiFi.localIP());
-
-  if (refreshToken.length() && entraConfigured()) {
-    if (refreshAccessToken()) {
-      authUser = "Account autenticato (endpoint /me)";
-      graphReady = true;
-      setSolid(CRGB::Green);
-    } else {
-      graphReady = false;
-      Serial.println("Refresh token non valido: accedere dalla pagina web.");
-    }
-  } else if (refreshToken.length() && !entraConfigured()) {
-    // A refresh token without its matching tenant/client configuration cannot be used safely.
-    prefs.remove("refresh");
-    refreshToken = "";
+  if (connected && WiFi.isConnected()) {
+    startApplicationServices();
+  } else if (wifiPortalActive) {
+    Serial.println("[WiFi] Setup portal is running in non-blocking mode.");
+    Serial.println("[WiFi] Network name: TeamsPresence-Setup (open network, no password)");
+    Serial.println("[WiFi] Portal address: http://192.168.4.1/");
+  } else {
+    wifiReady = false;
+    Serial.println("[WiFi] No connection and no active setup portal. Check serial log above.");
+    setLedPattern(WIFI_FAILED_PATTERN,
+                  sizeof(WIFI_FAILED_PATTERN) / sizeof(WIFI_FAILED_PATTERN[0]),
+                  "Wi-Fi unavailable: 3 red flashes");
   }
 }
 
 void loop() {
+  if (wifiPortalActive) {
+    // WiFiManager is non-blocking so the LED can show a repeating cyan portal code.
+    if (wifiManager.process()) {
+      Serial.println("[WiFi] Credentials accepted; starting application services.");
+      startApplicationServices();
+    }
+    updateLedPattern();
+    delay(5);
+    return;
+  }
+
   if (!wifiReady) {
-    delay(1000);
+    updateLedPattern();
+    delay(10);
     return;
   }
 
@@ -690,9 +886,6 @@ void loop() {
     pollPresence();
   }
 
-  if (!graphReady && !deviceLoginPending && !oauthError.length()) {
-    // Await user action in the local web page.
-  }
-
+  updateLedPattern();
   delay(5);
 }
