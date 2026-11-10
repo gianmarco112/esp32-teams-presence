@@ -209,12 +209,23 @@ The repository uses two GitHub Actions workflows:
 
 | Workflow | Purpose |
 |---|---|
-| `firmware.yml` | Builds the ESP32 firmware on pushes to `main`, pull requests, and manual runs; packages the binaries as a build artifact. |
-| `pages.yml` | Publishes the installer and stages firmware assets from published stable GitHub Releases. |
+| `firmware.yml` | Builds the generic ESP32 firmware on pushes to `main`, pull requests, and manual runs. On version tags, it packages the firmware, publishes a GitHub Release, and deploys the installer with the release assets. |
+| `pages.yml` | Publishes installer changes to GitHub Pages and supports manual deployment. |
 
-### Create a firmware release
+### Publish a test build
 
-After configuring `MS_TENANT_ID` and `MS_CLIENT_ID` as repository variables, create and push a version tag:
+To publish a pre-release for testing, create and push a tag containing a hyphen:
+
+```bash
+git tag v0.1.0-rc.1
+git push origin v0.1.0-rc.1
+```
+
+Tags containing a hyphen are published as GitHub pre-releases. They appear in the installer's **Advanced → Test versions** section and are not offered as the default stable installation.
+
+### Publish a stable build
+
+After the test firmware has been validated on the target hardware, create a stable tag:
 
 ```bash
 git tag v1.0.0
@@ -223,14 +234,15 @@ git push origin v1.0.0
 
 The firmware workflow then:
 
-1. builds the `esp32dev` target with PlatformIO;
+1. builds the generic `esp32dev` target with PlatformIO;
 2. packages `bootloader.bin`, `partitions.bin`, `boot_app0.bin`, and `firmware.bin`;
 3. generates `manifest.json` and `SHA256SUMS`;
-4. attaches the files to the GitHub Release.
+4. publishes a GitHub Release (pre-release for tags containing a hyphen);
+5. stages release assets under the installer site and deploys GitHub Pages.
 
-Publishing the release triggers the Pages workflow, which copies its firmware assets to the installer site so the browser can fetch them from the same origin.
+The generic firmware contains no organisation-specific Tenant ID or Client ID. Each ESP32 receives those values through its local configuration page.
 
-Do not publish a release tag until the CI build succeeds and the generated firmware has been tested on the target hardware.
+A successful CI build confirms compilation and packaging, not physical operation. Keep test builds marked as pre-releases until the firmware has been flashed and validated on the actual ESP32 hardware.
 
 ## Repository layout
 
