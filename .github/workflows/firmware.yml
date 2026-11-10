@@ -31,13 +31,6 @@ jobs:
       - name: Install PlatformIO
         run: python -m pip install --upgrade platformio
 
-      - name: Generate firmware configuration
-        env:
-          MS_TENANT_ID: ${{ vars.MS_TENANT_ID }}
-          MS_CLIENT_ID: ${{ vars.MS_CLIENT_ID }}
-          REQUIRE_ENTRA_CONFIG: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: python scripts/configure_firmware.py
-
       - name: Build ESP32-WROOM-32D firmware
         run: pio run -e esp32dev
 
