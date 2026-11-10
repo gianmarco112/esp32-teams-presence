@@ -1,15 +1,37 @@
+<!--
+  TEAMS PRESENCE — visual identity
+  Brand palette: midnight navy, Microsoft-inspired violet/blue, and LED status accents.
+-->
+<div align="center">
+
+<img src="docs/images/brand-banner.svg" alt="Teams Presence for ESP32 — your Teams status, at a glance" width="100%">
+
 # Teams Presence for ESP32
 
-A standalone Microsoft Teams presence indicator built around an **ESP32-WROOM-32D** and **WS2812B addressable RGB LEDs**.
+**Your Teams status. At a glance.**
 
-The device authenticates a Microsoft 365 user with OAuth 2.0 Device Code Flow, reads that user's presence from Microsoft Graph, and displays it through the LED strip. Wi-Fi setup, Microsoft sign-in, and device settings are managed through a lightweight local web interface.
+A standalone, Wi-Fi connected presence indicator powered by ESP32, Microsoft Graph and WS2812B LEDs.
 
-[![Firmware CI](https://github.com/gianmarco112/esp32-teams-presence/actions/workflows/firmware.yml/badge.svg)](https://github.com/gianmarco112/esp32-teams-presence/actions/workflows/firmware.yml)
-[![GitHub Pages](https://github.com/gianmarco112/esp32-teams-presence/actions/workflows/pages.yml/badge.svg)](https://github.com/gianmarco112/esp32-teams-presence/actions/workflows/pages.yml)
+<p>
+  <a href="https://github.com/gianmarco112/esp32-teams-presence/releases"><img src="https://img.shields.io/github/v/release/gianmarco112/esp32-teams-presence?style=for-the-badge&logo=github&label=Release&color=7567E8" alt="Latest release"></a>
+  <a href="https://github.com/gianmarco112/esp32-teams-presence/actions/workflows/firmware.yml"><img src="https://img.shields.io/github/actions/workflow/status/gianmarco112/esp32-teams-presence/firmware.yml?style=for-the-badge&logo=githubactions&label=Firmware%20CI" alt="Firmware CI"></a>
+  <a href="https://github.com/gianmarco112/esp32-teams-presence/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-not%20specified-lightgrey?style=for-the-badge" alt="License not specified"></a>
+</p>
 
-**Project status:** early development. The firmware and installer are under active development and must be validated on the target hardware before wider deployment.
+<p>
+  <a href="https://gianmarco112.github.io/esp32-teams-presence/"><strong>⚡ Web Installer</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#features"><strong>Features</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#hardware"><strong>Hardware</strong></a>
+  &nbsp;·&nbsp;
+  <a href="#first-time-setup"><strong>Get started</strong></a>
+</p>
+
+</div>
 
 ---
+
 
 ## Contents
 
