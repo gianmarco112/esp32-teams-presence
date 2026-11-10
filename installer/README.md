@@ -5,19 +5,20 @@ Pagina web per installare Teams Presence su ESP32-WROOM-32D tramite USB, con Web
 ## Pubblicazione GitHub Pages
 
 1. Aprire **Settings → Pages** nel repository.
-2. In **Build and deployment**, selezionare **Deploy from a branch**.
-3. Selezionare branch `main` e cartella `/ (root)` non è adatta se si vuole pubblicare solo installer; in alternativa usare GitHub Actions per pubblicare la cartella `installer` oppure spostare i file installer nella root.
-4. URL con Pages e cartella: se pubblicata dalla root, usare `https://gianmarco112.github.io/esp32-teams-presence/installer/`.
+2. In **Build and deployment → Source**, selezionare **GitHub Actions**.
+3. Il workflow `.github/workflows/pages.yml` pubblica automaticamente il contenuto di `installer/` alla root del sito.
+4. URL previsto: https://gianmarco112.github.io/esp32-teams-presence/
 
-## Formato release richiesto
+## Pubblicazione delle release firmware
 
-Ogni GitHub Release deve avere un asset chiamato `manifest.json`. Il manifest segue il formato ESP Web Tools:
+L'installer recupera le GitHub Releases pubbliche del repository. La release più recente stabile viene proposta come installazione rapida; le altre vengono elencate nella sezione versioni precedenti. Le release draft e prerelease sono escluse.
+
+Ogni release deve contenere un asset chiamato esattamente `manifest.json` e i file binari indicati nei suoi `path`. Esempio per la tabella partizioni standard ESP32:
 
 ```json
 {
   "name": "Teams Presence",
   "version": "1.0.0",
-  "new_install_prompt_erase": true,
   "builds": [
     {
       "chipFamily": "ESP32",
@@ -32,21 +33,19 @@ Ogni GitHub Release deve avere un asset chiamato `manifest.json`. Il manifest se
 }
 ```
 
-Allegare alla stessa release anche i file indicati nei `path` del manifest. Gli offset devono corrispondere esattamente alla configurazione di partizioni/flash del firmware PlatformIO. Non assumere questi offset senza verificare i file prodotti dalla build.
-
-L'installer legge le release pubbliche da GitHub API, propone l'ultima release stabile e mostra le precedenti. Le release draft e prerelease sono escluse.
+Gli offset dell'esempio corrispondono alla configurazione ESP32 Arduino/PlatformIO più comune, ma vanno verificati sui file generati dalla build effettiva prima di pubblicare una release. Non riutilizzare questi indirizzi alla cieca se viene modificata la tabella partizioni o la configurazione del framework.
 
 ## Requisiti browser
 
 - Chrome o Microsoft Edge desktop aggiornati.
-- Sito servito su HTTPS (o localhost durante sviluppo).
+- Sito servito su HTTPS (GitHub Pages lo fornisce).
 - Cavo USB dati.
 - Driver USB-seriale della scheda, se necessario.
 
-## Nota sul flash
+## Note
 
-Questa pagina è una prima implementazione e deve essere collaudata con i binari reali prodotti dal progetto. In particolare verificare la compatibilità della versione di esptool-js, il manifest e gli offset con una scheda di test prima di distribuirla agli utenti. Il browser non può flashare da iPhone/Safari né dai browser che non implementano Web Serial.
+- L'installer usa esptool-js 0.7.1 e il formato manifest `builds[].parts[]`.
+- Il browser deve supportare Web Serial. Safari e iOS non sono supportati per questo flusso.
+- Questa prima versione non è ancora collaudata con i binari reali del firmware. Prima della distribuzione agli utenti occorre compilare il progetto, preparare una GitHub Release con i quattro file richiesti e provare il flash su una scheda di test.
+- Il flash non può essere verificato senza un dispositivo collegato fisicamente.
 
-## Pubblicare il sito dalla cartella installer
-
-Consigliato: configurare GitHub Pages con GitHub Actions e workflow che carica il contenuto di `installer/` come artifact Pages. Oppure usare una branch dedicata con i file di installer nella root.
