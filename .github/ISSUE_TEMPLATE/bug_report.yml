@@ -1,0 +1,64 @@
+name: Bug report
+description: Report a reproducible firmware, installer, or documentation problem.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, search existing issues. Never include passwords, Wi-Fi credentials, Tenant secrets, access tokens, or refresh tokens.
+  - type: input
+    id: version
+    attributes:
+      label: Firmware version
+      placeholder: e.g. v1.0.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: board
+    attributes:
+      label: ESP32 board
+      placeholder: e.g. ESP32 DevKit / ESP32-WROOM-32D
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected component
+      options:
+        - Firmware
+        - Microsoft Entra ID / sign-in
+        - Microsoft Graph / presence
+        - Web installer
+        - Local web interface
+        - LEDs / hardware
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide clear, numbered steps.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Redact tokens, identifiers, personal data, and network credentials before posting.
+      render: text
+    validations:
+      required: false
