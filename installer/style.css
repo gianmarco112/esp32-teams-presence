@@ -37,6 +37,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .chevron{font-size:23px;color:var(--muted);transition:transform .2s}
 .versions-toggle[aria-expanded=true] .chevron{transform:rotate(180deg)}
 .versions-content{border-top:1px solid var(--line);padding:15px 0 19px}
+.list-heading{font:600 13px 'Space Grotesk',sans-serif;margin:14px 0 7px;color:#dce5f5}
+.preview-section{margin-top:24px;padding-top:12px;border-top:1px solid var(--line)}
+.preview-release{border-color:#6b5b35;background:#211d16}
+.preview-release .secondary{background:#6b5424;border-color:#8b6f35;color:#fff1c7}
 .small{font-size:11px;line-height:1.55}
 .release-list{display:grid;gap:8px;margin-top:12px}
 .release-item{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#0d1727;border:1px solid #263650;border-radius:10px;padding:12px}
