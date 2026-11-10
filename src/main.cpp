@@ -7,10 +7,13 @@
 #include <ArduinoJson.h>
 #include <FastLED.h>
 #include <WiFiManager.h>
+#include <Update.h>
+#include <mbedtls/md.h>
 #include <time.h>
 #include <esp32_cert_bundle.h>
 
 #include "config.h"
+#include "build_version.h"
 
 // Optional compile-time defaults for developers with a private local config.h.
 // Production firmware ships with empty defaults and is configured from the web UI.
@@ -65,6 +68,9 @@ bool deviceLoginPending = false;
 bool graphReady = false;
 bool presenceReady = false;  // True only after a successful Microsoft Graph /me/presence response.
 bool wifiReady = false;
+
+const char* otaManifestUrl = "https://gianmarco112.github.io/esp32-teams-presence/latest.json";
+const char* otaFirmwarePrefix = "https://gianmarco112.github.io/esp32-teams-presence/firmware/";
 
 struct LedPhase {
   CRGB color;
@@ -414,7 +420,7 @@ String pageHtml() {
   html += F("</p></div><div class='hero-stats'><div class='metric'><span>Account Microsoft</span><strong>");
   html += presenceReady ? F("Collegato e operativo") : (graphReady ? F("Token acquisito · verifica Graph") : F("Non collegato"));
   html += F("</strong></div><div class='metric'><span>Aggiornamento presenza</span><strong>Ogni ");
-  html += String(pollIntervalMs / 1000UL) + " secondi</strong></div></div></section>");
+  html += String(pollIntervalMs / 1000UL) + " secondi</strong></div></div></section>";
 
   if (oauthError.length()) {
     html += F("<div class='alert'><b>Attenzione</b><br>");
@@ -448,6 +454,29 @@ String pageHtml() {
   }
 
   html += entraSettingsHtml();
+  html += F("<section class='card section'><div class='section-heading'><span class='section-icon'>OTA</span>"
+            "<span class='summary-copy'><strong>Aggiornamento firmware</strong><small>Installa nuove versioni direttamente via Wi-Fi</small></span>"
+            "<span class='pill neutral'>");
+  html += FIRMWARE_VERSION;
+  html += F("</span></div><div class='section-body'><p class='muted'>Controlla le release pubblicate e aggiorna il dispositivo senza collegare il cavo USB.</p>"
+            "<div id='otaStatus' class='field-note' role='status'>Versione installata: ");
+  html += FIRMWARE_VERSION;
+  html += F("</div><div class='actions' style='gap:10px;flex-wrap:wrap'><button id='otaCheck' class='button' "
+            "style='background:#263653;color:#dce6f8' type='button'>Controlla aggiornamenti</button>"
+            "<button id='otaInstall' class='button primary' type='button' hidden>Aggiorna firmware →</button></div>"
+            "<p class='field-note' style='margin-top:13px'>Durante l'installazione non spegnere l'ESP32. Le impostazioni personali non vengono cancellate.</p>"
+            "<script>"
+            "(()=>{const check=document.getElementById('otaCheck'),install=document.getElementById('otaInstall'),status=document.getElementById('otaStatus');"
+            "let available=false;const message=(text)=>{status.textContent=text};"
+            "check.addEventListener('click',async()=>{check.disabled=true;install.hidden=true;message('Controllo delle release GitHub in corso…');"
+            "try{const r=await fetch('/api/ota/check',{cache:'no-store'});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.message||'Controllo non riuscito');"
+            "available=!!d.available;if(available){message('Disponibile '+d.latestVersion+(d.channel==='prerelease'?' · versione di test':'')+'.');install.hidden=false;}"
+            "else{message('Firmware aggiornato · '+d.currentVersion);}}catch(e){message('Errore: '+e.message);}finally{check.disabled=false;}});"
+            "install.addEventListener('click',async()=>{if(!available||!confirm('Installare il nuovo firmware? Il dispositivo si riavvierà automaticamente.'))return;"
+            "check.disabled=true;install.disabled=true;message('Download e verifica firmware in corso. Non spegnere il dispositivo…');"
+            "try{const r=await fetch('/api/ota/update',{method:'POST'});const t=await r.text();if(!r.ok)throw new Error(t);message(t);}"
+            "catch(e){message('Aggiornamento non completato: '+e.message+' · Puoi riprovare.');check.disabled=false;install.disabled=false;}});})();"
+            "</script></div></section>");
   html += settingsFormHtml();
 
   html += F("<section class='card section'><div class='section-heading'><span class='section-icon'>NET</span>"
@@ -810,6 +839,295 @@ void pollPresence() {
   lastPresencePoll = millis();
 }
 
+
+bool isHexSha256(const String& value) {
+  if (value.length() != 64) return false;
+  for (size_t i = 0; i < value.length(); i++) {
+    const char c = value[i];
+    if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+          (c >= 'A' && c <= 'F'))) return false;
+  }
+  return true;
+}
+
+bool parseFirmwareVersion(String value, int& major, int& minor, int& patch,
+                          String& prerelease) {
+  value.trim();
+  if (value.startsWith("v") || value.startsWith("V")) value.remove(0, 1);
+  const int plus = value.indexOf('+');
+  if (plus >= 0) value = value.substring(0, plus);
+  const int dash = value.indexOf('-');
+  prerelease = dash >= 0 ? value.substring(dash + 1) : "";
+  String core = dash >= 0 ? value.substring(0, dash) : value;
+
+  int values[3] = {0, 0, 0};
+  int part = 0;
+  String number;
+  for (size_t i = 0; i <= core.length(); i++) {
+    const char c = i < core.length() ? core[i] : '.';
+    if (c == '.') {
+      if (!number.length() || part >= 3) return false;
+      for (size_t j = 0; j < number.length(); j++) {
+        if (number[j] < '0' || number[j] > '9') return false;
+      }
+      values[part++] = number.toInt();
+      number = "";
+    } else {
+      number += c;
+    }
+  }
+  if (part != 3) return false;
+  major = values[0];
+  minor = values[1];
+  patch = values[2];
+  return true;
+}
+
+bool prereleaseIsNewer(const String& latest, const String& current) {
+  if (!latest.length()) return current.length() > 0;  // Stable is newer than a prerelease.
+  if (!current.length()) return false;
+
+  const int latestDot = latest.lastIndexOf('.');
+  const int currentDot = current.lastIndexOf('.');
+  const String latestPrefix = latestDot >= 0 ? latest.substring(0, latestDot) : "";
+  const String currentPrefix = currentDot >= 0 ? current.substring(0, currentDot) : "";
+  const String latestNumber = latestDot >= 0 ? latest.substring(latestDot + 1) : latest;
+  const String currentNumber = currentDot >= 0 ? current.substring(currentDot + 1) : current;
+  if (latestPrefix == currentPrefix && latestNumber.length() && currentNumber.length()) {
+    bool numeric = true;
+    for (size_t i = 0; i < latestNumber.length(); i++)
+      if (latestNumber[i] < '0' || latestNumber[i] > '9') numeric = false;
+    for (size_t i = 0; i < currentNumber.length(); i++)
+      if (currentNumber[i] < '0' || currentNumber[i] > '9') numeric = false;
+    if (numeric) return latestNumber.toInt() > currentNumber.toInt();
+  }
+  return latest > current;
+}
+
+bool isNewerFirmwareVersion(const String& latest, const String& current) {
+  if (!latest.length() || latest == current) return false;
+  int lMajor, lMinor, lPatch, cMajor, cMinor, cPatch;
+  String lPre, cPre;
+  if (!parseFirmwareVersion(latest, lMajor, lMinor, lPatch, lPre) ||
+      !parseFirmwareVersion(current, cMajor, cMinor, cPatch, cPre)) {
+    // Development builds use a dev-<commit> identifier and can update to a tagged release.
+    return true;
+  }
+  if (lMajor != cMajor) return lMajor > cMajor;
+  if (lMinor != cMinor) return lMinor > cMinor;
+  if (lPatch != cPatch) return lPatch > cPatch;
+  return prereleaseIsNewer(lPre, cPre);
+}
+
+bool fetchOtaManifest(JsonDocument& manifest, String& error) {
+  String response;
+  int status = 0;
+  if (!httpsRequest(String(otaManifestUrl), "GET", "", "", response, status)) {
+    error = "Impossibile raggiungere il servizio aggiornamenti.";
+    return false;
+  }
+  if (status != 200) {
+    error = "Manifest aggiornamenti HTTP " + String(status) + ".";
+    return false;
+  }
+  if (deserializeJson(manifest, response)) {
+    error = "Manifest aggiornamenti non valido.";
+    return false;
+  }
+
+  const String version = manifest["version"] | "";
+  const String firmwareUrl = manifest["firmware_url"] | "";
+  const String digest = manifest["sha256"] | "";
+  const uint32_t size = manifest["size"] | 0U;
+  if (!version.length() || !firmwareUrl.startsWith(otaFirmwarePrefix) ||
+      !isHexSha256(digest) || size == 0) {
+    error = "Il manifest non supera i controlli di validazione.";
+    return false;
+  }
+  return true;
+}
+
+void handleOtaCheck() {
+  JsonDocument result;
+  result["currentVersion"] = FIRMWARE_VERSION;
+  JsonDocument manifest;
+  String error;
+  if (!fetchOtaManifest(manifest, error)) {
+    result["ok"] = false;
+    result["available"] = false;
+    result["message"] = error;
+    String payload;
+    serializeJson(result, payload);
+    server.send(502, "application/json; charset=utf-8", payload);
+    return;
+  }
+
+  const String latest = manifest["version"] | "";
+  const bool available = isNewerFirmwareVersion(latest, String(FIRMWARE_VERSION));
+  result["ok"] = true;
+  result["available"] = available;
+  result["latestVersion"] = latest;
+  result["channel"] = manifest["channel"] | "stable";
+  result["size"] = manifest["size"] | 0U;
+  result["message"] = available ? "È disponibile un nuovo firmware." : "Il firmware è già aggiornato.";
+  String payload;
+  serializeJson(result, payload);
+  server.send(200, "application/json; charset=utf-8", payload);
+}
+
+bool performOtaUpdate(String& error) {
+  JsonDocument manifest;
+  if (!fetchOtaManifest(manifest, error)) return false;
+
+  const String latest = manifest["version"] | "";
+  if (!isNewerFirmwareVersion(latest, String(FIRMWARE_VERSION))) {
+    error = "Non è disponibile una versione più recente.";
+    return false;
+  }
+
+  const String firmwareUrl = manifest["firmware_url"] | "";
+  String expectedSha = manifest["sha256"] | "";
+  expectedSha.toLowerCase();
+  const uint32_t expectedSize = manifest["size"] | 0U;
+
+  WiFiClientSecure client;
+  client.setCACertBundle(x509_crt_bundle, x509_crt_bundle_len);
+  HTTPClient http;
+  http.setTimeout(30000);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  if (!http.begin(client, firmwareUrl)) {
+    error = "Impossibile iniziare il download del firmware.";
+    return false;
+  }
+
+  const int status = http.GET();
+  if (status != HTTP_CODE_OK) {
+    error = "Download firmware fallito (HTTP " + String(status) + ").";
+    http.end();
+    return false;
+  }
+
+  const int contentLength = http.getSize();
+  if (contentLength <= 0 || (uint32_t)contentLength != expectedSize) {
+    error = "Dimensione firmware inattesa: download interrotto.";
+    http.end();
+    return false;
+  }
+
+  if (!Update.begin(expectedSize, U_FLASH)) {
+    error = "Spazio OTA insufficiente o partizione non disponibile.";
+    Update.printError(Serial);
+    http.end();
+    return false;
+  }
+
+  const mbedtls_md_info_t* mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  mbedtls_md_context_t shaContext;
+  mbedtls_md_init(&shaContext);
+  bool shaReady = mdInfo && mbedtls_md_setup(&shaContext, mdInfo, 0) == 0 &&
+                  mbedtls_md_starts(&shaContext) == 0;
+  if (!shaReady) {
+    error = "Impossibile inizializzare SHA-256.";
+    Update.abort();
+    mbedtls_md_free(&shaContext);
+    http.end();
+    return false;
+  }
+
+  Serial.printf("[OTA] Downloading %s (%u bytes)\n", latest.c_str(), expectedSize);
+  showColor(CRGB::Blue);
+  WiFiClient* stream = http.getStreamPtr();
+  uint8_t buffer[1024];
+  uint32_t remaining = expectedSize;
+  uint32_t written = 0;
+  uint32_t lastDataAt = millis();
+  bool transferOk = true;
+
+  while (remaining > 0) {
+    const int available = stream->available();
+    if (available <= 0) {
+      if (!http.connected() && stream->available() <= 0) {
+        transferOk = false;
+        error = "Download interrotto prima del completamento.";
+        break;
+      }
+      if ((uint32_t)(millis() - lastDataAt) > 30000UL) {
+        transferOk = false;
+        error = "Timeout durante il download del firmware.";
+        break;
+      }
+      delay(2);
+      continue;
+    }
+
+    const size_t chunk = (size_t)min((uint32_t)available,
+                                     (uint32_t)sizeof(buffer));
+    const int count = stream->read(buffer, chunk);
+    if (count <= 0) continue;
+    lastDataAt = millis();
+
+    if (mbedtls_md_update(&shaContext, buffer, (size_t)count) != 0 ||
+        Update.write(buffer, (size_t)count) != (size_t)count) {
+      transferOk = false;
+      error = "Errore durante la scrittura del firmware nella partizione OTA.";
+      break;
+    }
+    written += (uint32_t)count;
+    remaining -= (uint32_t)count;
+  }
+
+  unsigned char digest[32];
+  const bool hashOk = transferOk && written == expectedSize &&
+                      mbedtls_md_finish(&shaContext, digest) == 0;
+  mbedtls_md_free(&shaContext);
+  http.end();
+
+  if (!transferOk || !hashOk) {
+    Update.abort();
+    if (error.length() == 0) error = "Download firmware incompleto.";
+    return false;
+  }
+
+  char actualSha[65];
+  for (size_t i = 0; i < sizeof(digest); i++) {
+    snprintf(actualSha + (i * 2), 3, "%02x", digest[i]);
+  }
+  actualSha[64] = '\0';
+  if (expectedSha != String(actualSha)) {
+    Update.abort();
+    error = "SHA-256 non corrispondente: firmware rifiutato.";
+    return false;
+  }
+
+  if (!Update.end()) {
+    Update.printError(Serial);
+    error = "La verifica finale del firmware non è riuscita.";
+    return false;
+  }
+
+  Serial.printf("[OTA] Firmware %s verified and installed. Rebooting.\n", latest.c_str());
+  return true;
+}
+
+void handleOtaUpdate() {
+  if (!WiFi.isConnected()) {
+    server.send(503, "text/plain; charset=utf-8", "Wi-Fi non connesso.");
+    return;
+  }
+
+  String error;
+  if (!performOtaUpdate(error)) {
+    server.send(502, "text/plain; charset=utf-8", error);
+    return;
+  }
+
+  server.send(200, "text/plain; charset=utf-8",
+              "Aggiornamento installato correttamente. Riavvio in corso...");
+  delay(1200);
+  ESP.restart();
+}
+
+
 void startApplicationServices() {
   if (servicesStarted || !WiFi.isConnected()) return;
 
@@ -843,6 +1161,8 @@ void startApplicationServices() {
   server.on("/entra", HTTP_POST, handleEntraSave);
   server.on("/logout", HTTP_POST, handleLogout);
   server.on("/wifi", HTTP_POST, handleWifiChange);
+  server.on("/api/ota/check", HTTP_GET, handleOtaCheck);
+  server.on("/api/ota/update", HTTP_POST, handleOtaUpdate);
   server.on("/settings", HTTP_GET, handleSettingsRedirect);
   server.on("/settings", HTTP_POST, handleSettingsSave);
   server.begin();
