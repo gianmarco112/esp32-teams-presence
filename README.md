@@ -111,7 +111,7 @@ Create or configure the application in the Microsoft Entra admin center:
 
 1. Open **App registrations** and create a new registration.
 2. Choose **Accounts in this organizational directory only** (single tenant).
-3. Under **Authentication**, enable **Allow public client flows**.
+3. Under **Authentication → Advanced settings → Allow public client flows**, set **Enable the following mobile and desktop flows** to **Yes**, then save the change. This enables the **No keyboard (Device Code Flow)** authentication method required by the ESP32.
 4. Under **API permissions**, add **Microsoft Graph → Delegated permissions → `Presence.Read`**.
 5. Grant admin consent if required by the organisation's consent policy.
 
