@@ -1,0 +1,18 @@
+#pragma once
+
+// One single-tenant Microsoft Entra public-client app registration per organisation.
+// CI fills these values from GitHub Actions repository variables.
+// For a local build, copy this file to config.h and replace the placeholders.
+#define MS_TENANT_ID "YOUR_ENTRA_TENANT_ID"
+#define MS_CLIENT_ID "YOUR_PUBLIC_CLIENT_APPLICATION_ID"
+
+// WS2812B
+#define LED_PIN 18
+#define LED_COUNT 8
+#define LED_BRIGHTNESS 80
+
+// Microsoft Graph polling interval
+#define PRESENCE_POLL_MS 60000UL
+
+// Local configuration web server
+#define WEB_PORT 80
