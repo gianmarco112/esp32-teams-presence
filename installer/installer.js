@@ -96,12 +96,24 @@ function renderReleases() {
   }
 }
 
+function firmwareDirectoryFor(release) {
+  return new URL(`./firmware/${encodeURIComponent(release.tag_name)}/`, document.baseURI);
+}
+
+function manifestUrlFor(release) {
+  return new URL("manifest.json", firmwareDirectoryFor(release));
+}
+
 async function fetchManifest(release) {
-  const asset = assetFor(release, "manifest.json");
-  if (!asset) throw new Error("La release non contiene manifest.json.");
-  const response = await fetch(asset.browser_download_url);
-  if (!response.ok) throw new Error(`Impossibile scaricare manifest.json (HTTP ${response.status}).`);
-  return response.json();
+  if (!assetFor(release, "manifest.json")) {
+    throw new Error("La release GitHub non contiene manifest.json.");
+  }
+  const url = manifestUrlFor(release);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Manifest non disponibile sul sito installer (HTTP ${response.status}). Verifica il workflow Pages.`);
+  }
+  return { manifest: await response.json(), url };
 }
 
 async function installRelease(release) {
@@ -114,7 +126,7 @@ async function installRelease(release) {
     setProgress(0, `Installazione ${release.tag_name}`, "Seleziona la porta USB dell’ESP32.");
     // requestPort must be called directly from the user's click, before any awaited fetch.
     const selectedPort = await navigator.serial.requestPort();
-    const manifest = await fetchManifest(release);
+    const { manifest, url: manifestUrl } = await fetchManifest(release);
     if (!manifest.builds?.length) throw new Error("Manifest non valido: nessun build trovato.");
     const build = manifest.builds[0];
     if (build.chipFamily !== "ESP32") throw new Error("Firmware incompatibile: il manifest non dichiara ESP32.");
@@ -146,7 +158,10 @@ async function installRelease(release) {
       if (!part.path || !Number.isInteger(Number(part.offset)) || Number(part.offset) < 0) {
         throw new Error("Manifest non valido: percorso o offset di una partizione non valido.");
       }
-      const url = new URL(part.path, manifestAsset.browser_download_url);
+      const url = new URL(part.path, manifestUrl);
+      if (url.origin !== window.location.origin || !url.pathname.startsWith(firmwareDirectory.pathname)) {
+        throw new Error("Manifest non valido: i binari devono essere pubblicati nella cartella firmware della release.");
+      }
       const response = await fetch(url);
       if (!response.ok) throw new Error(`Download firmware fallito: ${part.path} (HTTP ${response.status}).`);
       const data = new Uint8Array(await response.arrayBuffer());
