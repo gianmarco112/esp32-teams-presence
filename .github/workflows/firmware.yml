@@ -75,6 +75,22 @@ jobs:
               "${release_flags[@]}"
           fi
 
+
+  deploy:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Configure GitHub Pages
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/configure-pages@v5
