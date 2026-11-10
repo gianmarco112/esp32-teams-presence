@@ -193,7 +193,7 @@ void setLedPattern(const LedPhase* phases, size_t count, const char* description
   currentLedPhase = 0;
   currentLedPhaseStarted = millis();
   if (count > 0) showColor(phases[0].color);
-  Serial.printf("[LED] %s\\n", description);
+  Serial.printf("[LED] %s\n", description);
 }
 
 void stopLedPattern() {
@@ -770,8 +770,8 @@ void setup() {
   Serial.println(" Teams Presence - ESP32 boot");
   Serial.println(" Serial diagnostics: 115200 baud");
   Serial.println("====================================");
-  Serial.printf("[BOOT] Flash size: %u bytes\\n", ESP.getFlashChipSize());
-  Serial.printf("[BOOT] Free heap: %u bytes\\n", ESP.getFreeHeap());
+  Serial.printf("[BOOT] Flash size: %u bytes\n", ESP.getFlashChipSize());
+  Serial.printf("[BOOT] Free heap: %u bytes\n", ESP.getFreeHeap());
 
   prefs.begin("teams-presence", false);
   const String defaultTenant = isGuid(String(MS_TENANT_ID)) ? String(MS_TENANT_ID) : "";
@@ -830,7 +830,7 @@ void setup() {
 
   const bool forcePortal = prefs.getBool("wifiPortal", false);
   prefs.putBool("wifiPortal", false);
-  Serial.printf("[WiFi] Saved Wi-Fi credentials: %s\\n",
+  Serial.printf("[WiFi] Saved Wi-Fi credentials: %s\n",
                 wifiManager.getWiFiIsSaved() ? "yes" : "no");
   setLedPattern(WIFI_CONNECTING_PATTERN,
                 sizeof(WIFI_CONNECTING_PATTERN) / sizeof(WIFI_CONNECTING_PATTERN[0]),
