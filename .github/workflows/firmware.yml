@@ -38,19 +38,27 @@ jobs:
       - name: Create generic firmware configuration
         run: cp include/config.h.example include/config.h
 
+      - name: Determine firmware version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/heads/release-test/* ]]; then
+            BUILD_VERSION="$(printf '%s' "$GITHUB_REF_NAME" | sed 's|^release-test/||')"
+          elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            BUILD_VERSION="$GITHUB_REF_NAME"
+          else
+            BUILD_VERSION="dev-$GITHUB_SHA"
+          fi
+          echo "BUILD_VERSION=$BUILD_VERSION" >> "$GITHUB_ENV"
+          printf '#pragma once\n#define FIRMWARE_VERSION "%s"\n' "$BUILD_VERSION" > include/build_version.h
+          echo "Building firmware version: $BUILD_VERSION"
+
       - name: Build ESP32-WROOM-32D firmware
         run: pio run -e esp32dev
 
       - name: Package firmware binaries
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" == refs/heads/release-test/* ]]; then
-            BUILD_VERSION="${GITHUB_REF_NAME#release-test/}"
-          elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            BUILD_VERSION="$GITHUB_REF_NAME"
-          else
-            BUILD_VERSION="dev-$GITHUB_SHA"
-          fi
           python scripts/package_firmware.py --version "$BUILD_VERSION" --output dist
 
       - name: Upload build artifact
@@ -131,6 +139,17 @@ jobs:
             echo "Downloading release assets for $tag"
             gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$target"
           done
+
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq "[.[] | select(.draft == false)] | sort_by(.published_at) | last | .tag_name // empty")
+          if [[ -n "$latest_tag" ]]; then
+            python3 scripts/generate_ota_manifest.py \
+              --version "$latest_tag" \
+              --firmware "_site/firmware/$latest_tag/firmware.bin" \
+              --base-url "https://gianmarco112.github.io/esp32-teams-presence/firmware/$latest_tag/firmware.bin" \
+              --output "_site/latest.json"
+          else
+            echo "No published release available for OTA yet."
+          fi
 
       - name: Upload GitHub Pages artifact
         if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-test/')
