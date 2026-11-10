@@ -66,7 +66,8 @@ async function loadReleases() {
 }
 
 function hasRequiredAssets(release) {
-  return Boolean(assetFor(release, "manifest.json"));
+  const required = ["manifest.json", "bootloader.bin", "partitions.bin", "boot_app0.bin", "firmware.bin"];
+  return required.every((name) => Boolean(assetFor(release, name)));
 }
 
 function renderReleases() {
@@ -132,7 +133,6 @@ async function installRelease(release) {
     if (build.chipFamily !== "ESP32") throw new Error("Firmware incompatibile: il manifest non dichiara ESP32.");
     if (!build.parts?.length) throw new Error("Manifest non valido: nessuna partizione definita.");
 
-    const manifestAsset = assetFor(release, "manifest.json");
     transport = new Transport(selectedPort, true);
     const terminal = {
       clean() {},
