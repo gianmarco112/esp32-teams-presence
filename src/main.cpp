@@ -5,7 +5,7 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
-#include <Adafruit_NeoPixel.h>
+#include <FastLED.h>
 #include <WiFiManager.h>
 #include <time.h>
 #include <esp32_cert_bundle.h>
@@ -16,7 +16,23 @@
 #error "Copy include/config.h.example to include/config.h and configure Tenant ID and Client ID"
 #endif
 
-Adafruit_NeoPixel leds(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+#ifndef LED_MAX_COUNT
+#define LED_MAX_COUNT 300
+#endif
+#ifndef PRESENCE_POLL_MIN_S
+#define PRESENCE_POLL_MIN_S 10
+#endif
+#ifndef PRESENCE_POLL_MAX_S
+#define PRESENCE_POLL_MAX_S 3600
+#endif
+
+CRGB leds[LED_MAX_COUNT];
+uint16_t activeLeds = LED_COUNT;
+uint32_t pollIntervalMs = PRESENCE_POLL_MS;
+uint8_t brightnessPct = (LED_BRIGHTNESS * 100 + 127) / 255;
+String manualState;  // empty = automatic (follows Teams presence)
+
+void pollPresence();
 WebServer server(WEB_PORT);
 Preferences prefs;
 
@@ -93,32 +109,89 @@ bool httpsRequest(const String& url, const String& method,
   return status > 0;
 }
 
-void setSolid(uint32_t color) {
-  for (uint16_t i = 0; i < LED_COUNT; ++i) {
-    leds.setPixelColor(i, color);
-  }
-  leds.show();
+void showColor(const CRGB& c) {
+  fill_solid(leds, LED_MAX_COUNT, CRGB::Black);
+  fill_solid(leds, activeLeds, c);
+  FastLED.show();
+}
+
+// A manual state locks the LEDs: automatic updates are ignored until it is cleared.
+void setSolid(const CRGB& c) {
+  if (manualState.length()) return;
+  showColor(c);
+}
+
+bool stateColor(const String& s, CRGB& c) {
+  if (s == "Available") c = CRGB::Green;
+  else if (s == "Busy") c = CRGB::Red;
+  else if (s == "DoNotDisturb") c = CRGB::Purple;
+  else if (s == "Away") c = CRGB::Yellow;
+  else if (s == "BeRightBack") c = CRGB::Orange;
+  else if (s == "Offline") c = CRGB::Black;
+  else if (s == "Error") c = CRGB::Blue;
+  else return false;
+  return true;
+}
+
+void applyManualState() {
+  CRGB c;
+  if (manualState.length() && stateColor(manualState, c)) showColor(c);
 }
 
 void setErrorBlink() {
   static bool on = false;
   on = !on;
-  setSolid(on ? leds.Color(0, 0, 255) : leds.Color(0, 0, 0));
+  setSolid(on ? CRGB::Blue : CRGB::Black);
 }
 
-String htmlEscape(String value) {
-  value.replace("&", "&amp;");
-  value.replace("<", "&lt;");
-  value.replace(">", "&gt;");
-  value.replace("\"", "&quot;");
-  return value;
+String htmlEscape(String s) {
+  s.replace("&", "&amp;");
+  s.replace("<", "&lt;");
+  s.replace(">", "&gt;");
+  s.replace("\"", "&quot;");
+  return s;
+}
+
+String settingsFormHtml() {
+  static const char* const states[][2] = {
+    {"", "Automatico (segue Teams)"}, {"Available", "Disponibile (verde)"},
+    {"Busy", "Occupato (rosso)"}, {"DoNotDisturb", "Non disturbare (viola)"},
+    {"Away", "Assente (giallo)"}, {"BeRightBack", "Torno subito (arancione)"},
+    {"Offline", "Offline (spento)"}, {"Error", "Errore (blu)"}};
+
+  String html = F("<hr><h2>Impostazioni</h2><form method='post' action='/settings'>");
+  html += "<label>Numero di LED (1-" + String(LED_MAX_COUNT) + ")</label>";
+  html += "<input type='number' name='leds' min='1' max='" + String(LED_MAX_COUNT) +
+          "' value='" + String(activeLeds) + "'>";
+  html += "<label>Luminosità: <span id='bv'>" + String(brightnessPct) + "</span>%</label>";
+  html += "<input type='range' name='brightness' min='1' max='100' value='" +
+          String(brightnessPct) + "' oninput=\"document.getElementById('bv').textContent=this.value\">";
+  html += "<label>Intervallo di aggiornamento (secondi, " + String(PRESENCE_POLL_MIN_S) +
+          "-" + String(PRESENCE_POLL_MAX_S) + ")</label>";
+  html += "<input type='number' name='refresh' min='" + String(PRESENCE_POLL_MIN_S) +
+          "' max='" + String(PRESENCE_POLL_MAX_S) + "' value='" +
+          String(pollIntervalMs / 1000UL) + "'>";
+  html += "<label>Stato LED</label><select name='state'>";
+  for (auto& s : states) {
+    html += "<option value='" + String(s[0]) + "'";
+    if (manualState == s[0]) html += " selected";
+    html += ">" + String(s[1]) + "</option>";
+  }
+  html += F("</select><p class='muted'>Con uno stato manuale i LED ignorano la presenza "
+            "di Teams finché non torni su Automatico.</p><button>Salva</button></form>");
+  return html;
 }
 
 String pageHtml() {
   String html = F(
     "<!doctype html><html lang='it'><head><meta charset='utf-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>");
+  // Auto-refresh only while waiting for login, so form edits are not discarded.
+  if (deviceLoginPending) html += F("<meta http-equiv='refresh' content='5'>");
+  html += F(
     "<title>Teams Presence</title><style>"
+    "label{display:block;margin:16px 0 6px}input,select{width:100%;padding:10px;"
+    "border-radius:8px;box-sizing:border-box}"
     "body{font-family:system-ui;max-width:620px;margin:35px auto;padding:0 18px;"
     "background:#101722;color:#eef3fa}main{background:#1b2736;padding:24px;"
     "border-radius:16px}a,button{color:white;background:#2563eb;padding:12px 16px;"
@@ -130,6 +203,9 @@ String pageHtml() {
   html += "<h2>Stato: " + htmlEscape(presenceText) + "</h2>";
   html += "<p>Attività: " + htmlEscape(activityText) + "</p>";
   html += "<p>Account: " + htmlEscape(authUser) + "</p>";
+  if (oauthError.length()) {
+    html += "<p style='color:#fca5a5'>Errore: " + htmlEscape(oauthError) + "</p>";
+  }
 
   if (deviceLoginPending) {
     html += "<hr><h2>Accedi a Microsoft</h2><p>Apri il link e inserisci il codice:</p>";
@@ -139,16 +215,23 @@ String pageHtml() {
   } else if (!graphReady) {
     html += "<hr><p>Microsoft non è ancora collegato.</p>";
     html += "<form method='post' action='/login'><button>Collega Microsoft</button></form>";
-  }
-else {
+  } else {
     html += "<hr><p>Account Microsoft collegato.</p>";
     html += "<form method='post' action='/logout'><button>Disconnetti account</button></form>";
   }
 
   html += F("<hr><p class='muted'>Wi-Fi: ");
   html += WiFi.isConnected() ? "connesso" : "disconnesso";
-  html += F("</p><p class='muted'>Aggiornamento presenza: circa ogni 60 secondi.</p>"
-            "</main></body></html>");
+  html += "</p><p class='muted'>Stato LED: " +
+          (manualState.length() ? "manuale (" + manualState + ")" : String("automatico")) +
+          " &middot; aggiornamento ogni " + String(pollIntervalMs / 1000UL) + " s</p>";
+  html += settingsFormHtml();
+  html += F("<hr><h2>Rete Wi-Fi</h2><p class='muted'>Rete attuale: ");
+  html += htmlEscape(WiFi.SSID());
+  html += F("</p><form method='post' action='/wifi' "
+            "onsubmit=\"return confirm('Il dispositivo si riavvia e apre il portale Wi-Fi. Continuare?')\">"
+            "<button>Cambia rete Wi-Fi</button></form>");
+  html += F("</main></body></html>");
   return html;
 }
 
@@ -194,9 +277,63 @@ void handleLogin() {
   deviceLoginPending = true;
   nextDevicePoll = millis() + devicePollInterval * 1000UL;
   oauthError = "";
-  setSolid(leds.Color(128, 0, 128));
+  setSolid(CRGB::Purple);
   server.sendHeader("Location", "/");
   server.send(303);
+}
+
+void handleSettingsRedirect() {
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleSettingsSave() {
+  if (server.hasArg("leds")) {
+    activeLeds = constrain(server.arg("leds").toInt(), 1, LED_MAX_COUNT);
+    prefs.putUShort("leds", activeLeds);
+  }
+  if (server.hasArg("brightness")) {
+    brightnessPct = constrain(server.arg("brightness").toInt(), 1, 100);
+    prefs.putUChar("bright", brightnessPct);
+    FastLED.setBrightness((brightnessPct * 255 + 50) / 100);
+  }
+  if (server.hasArg("refresh")) {
+    uint32_t sec = constrain(server.arg("refresh").toInt(),
+                             PRESENCE_POLL_MIN_S, PRESENCE_POLL_MAX_S);
+    pollIntervalMs = sec * 1000UL;
+    prefs.putUInt("pollSec", sec);
+  }
+  if (server.hasArg("state")) {
+    String s = server.arg("state");
+    CRGB c;
+    manualState = stateColor(s, c) ? s : "";
+    prefs.putString("manual", manualState);
+  }
+
+  if (manualState.length()) {
+    applyManualState();
+  } else if (graphReady) {
+    lastPresencePoll = 0;  // refresh LEDs on the next loop
+    pollPresence();
+  } else {
+    showColor(CRGB::Black);
+  }
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleWifiChange() {
+  prefs.putBool("wifiPortal", true);
+  server.send(200, "text/html; charset=utf-8",
+    "<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<body style='font-family:system-ui;max-width:620px;margin:35px auto;padding:0 18px'>"
+    "<h2>Cambio rete Wi-Fi</h2>"
+    "<p>Il dispositivo si riavvia. Collegati alla rete <b>TeamsPresence-Setup</b> e "
+    "scegli la nuova rete (portale su http://192.168.4.1/).</p>"
+    "<p>Se non completi la procedura entro 3 minuti, il dispositivo si riconnette "
+    "alla rete precedente.</p></body>");
+  delay(500);
+  ESP.restart();
 }
 
 void handleLogout() {
@@ -208,7 +345,7 @@ void handleLogout() {
   presenceText = "Account scollegato";
   activityText = "-";
   deviceLoginPending = false;
-  setSolid(leds.Color(0, 0, 0));
+  setSolid(CRGB::Black);
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -243,13 +380,15 @@ bool parseTokenResponse(const String& response, int status) {
   return true;
 }
 
+void pollPresence();
+
 void pollDeviceCode() {
   if (!deviceLoginPending || (int32_t)(millis() - nextDevicePoll) < 0) return;
 
   if ((uint32_t)(millis() - deviceCodeStartedAt) >= deviceCodeExpires * 1000UL) {
     deviceLoginPending = false;
     oauthError = "Codice scaduto. Avvia nuovamente il login.";
-    setSolid(leds.Color(0, 0, 255));
+    setSolid(CRGB::Blue);
     return;
   }
 
@@ -273,7 +412,8 @@ void pollDeviceCode() {
       deviceLoginPending = false;
       authUser = "Account autenticato (endpoint /me)";
       presenceText = "Autenticato – lettura presenza...";
-      setSolid(leds.Color(0, 255, 0));
+      setSolid(CRGB::Green);
+      pollPresence();
     }
     return;
   }
@@ -289,7 +429,7 @@ void pollDeviceCode() {
   if (err == "authorization_declined" || err == "expired_token" ||
       err == "bad_verification_code") {
     deviceLoginPending = false;
-    setSolid(leds.Color(0, 0, 255));
+    setSolid(CRGB::Blue);
   }
 }
 
@@ -309,24 +449,21 @@ bool refreshAccessToken() {
 }
 
 void applyPresenceColor(const String& availability) {
-  if (availability == "Available") setSolid(leds.Color(0, 255, 0));
-  else if (availability == "Busy") setSolid(leds.Color(255, 0, 0));
-  else if (availability == "DoNotDisturb") setSolid(leds.Color(128, 0, 128));
-  else if (availability == "Away") setSolid(leds.Color(255, 255, 0));
-  else if (availability == "BeRightBack") setSolid(leds.Color(255, 80, 0));
-  else if (availability == "Offline") setSolid(leds.Color(0, 0, 0));
+  CRGB c;
+  if (availability != "Error" && stateColor(availability, c)) setSolid(c);
   else setErrorBlink();
 }
 
 void pollPresence() {
   if (!graphReady || !accessToken.length()) return;
+  lastPresencePoll = millis();
 
   uint32_t nowEpoch = (uint32_t)time(nullptr);
   if (nowEpoch > 1700000000UL && nowEpoch >= tokenExpiryEpoch) {
     if (!refreshAccessToken()) {
       graphReady = false;
       presenceText = "Sessione scaduta: riconnettere Microsoft";
-      setSolid(leds.Color(0, 0, 255));
+      setSolid(CRGB::Blue);
       return;
     }
   }
@@ -343,7 +480,7 @@ void pollPresence() {
     if (!refreshAccessToken()) {
       graphReady = false;
       presenceText = "Autenticazione richiesta";
-      setSolid(leds.Color(0, 0, 255));
+      setSolid(CRGB::Blue);
       return;
     }
     if (!httpsRequest(graphPresenceUrl, "GET", "", accessToken, response, status)) return;
@@ -373,24 +510,36 @@ void setup() {
   Serial.begin(115200);
   delay(300);
 
-  leds.begin();
-  leds.setBrightness(LED_BRIGHTNESS);
-  leds.clear();
-  leds.show();
-  setSolid(leds.Color(0, 0, 255));
-
   prefs.begin("teams-presence", false);
   refreshToken = prefs.getString("refresh", "");
+  activeLeds = constrain(prefs.getUShort("leds", LED_COUNT), 1, LED_MAX_COUNT);
+  pollIntervalMs = constrain(prefs.getUInt("pollSec", PRESENCE_POLL_MS / 1000UL),
+                             PRESENCE_POLL_MIN_S, PRESENCE_POLL_MAX_S) * 1000UL;
+  manualState = prefs.getString("manual", "");
+
+  FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, LED_MAX_COUNT);
+  brightnessPct = constrain(prefs.getUChar("bright", brightnessPct), 1, 100);
+  FastLED.setBrightness((brightnessPct * 255 + 50) / 100);
+  if (manualState.length()) applyManualState();
+  else setSolid(CRGB::Blue);
 
   WiFi.mode(WIFI_STA);
   WiFiManager wm;
   wm.setConfigPortalTimeout(180);
   wm.setConnectTimeout(30);
-  bool connected = wm.autoConnect("TeamsPresence-Setup");
+  bool connected;
+  if (prefs.getBool("wifiPortal", false)) {
+    prefs.putBool("wifiPortal", false);
+    // Old credentials are kept until a new network is saved; on timeout, reconnect to them.
+    connected = wm.startConfigPortal("TeamsPresence-Setup");
+    if (!connected) connected = wm.autoConnect("TeamsPresence-Setup");
+  } else {
+    connected = wm.autoConnect("TeamsPresence-Setup");
+  }
 
   if (!connected) {
     Serial.println("Wi-Fi non configurato o timeout. Riavvia per riprovare.");
-    setSolid(leds.Color(255, 0, 0));
+    setSolid(CRGB::Red);
     return;
   }
 
@@ -409,6 +558,9 @@ void setup() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/login", HTTP_POST, handleLogin);
   server.on("/logout", HTTP_POST, handleLogout);
+  server.on("/wifi", HTTP_POST, handleWifiChange);
+  server.on("/settings", HTTP_GET, handleSettingsRedirect);
+  server.on("/settings", HTTP_POST, handleSettingsSave);
   server.begin();
 
   Serial.print("Pagina configurazione: http://");
@@ -418,7 +570,7 @@ void setup() {
     if (refreshAccessToken()) {
       authUser = "Account autenticato (endpoint /me)";
       graphReady = true;
-      setSolid(leds.Color(0, 255, 0));
+      setSolid(CRGB::Green);
     } else {
       graphReady = false;
       Serial.println("Refresh token non valido: accedere dalla pagina web.");
@@ -435,7 +587,7 @@ void loop() {
   server.handleClient();
   pollDeviceCode();
 
-  if (graphReady && millis() - lastPresencePoll >= PRESENCE_POLL_MS) {
+  if (graphReady && millis() - lastPresencePoll >= pollIntervalMs) {
     pollPresence();
   }
 
