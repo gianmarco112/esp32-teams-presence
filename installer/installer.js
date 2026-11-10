@@ -153,6 +153,7 @@ async function installRelease(release) {
       throw new Error(`Chip non compatibile con questo firmware: ${chip}`);
     }
 
+    const firmwareDirectory = firmwareDirectoryFor(release);
     const fileParts = [];
     for (const part of build.parts) {
       if (!part.path || !Number.isInteger(Number(part.offset)) || Number(part.offset) < 0) {
