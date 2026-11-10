@@ -25,6 +25,10 @@
 #define MS_CLIENT_ID ""
 #endif
 
+#ifndef LED_CHIPSET
+#define LED_CHIPSET WS2812B
+#endif
+
 #ifndef LED_MAX_COUNT
 #define LED_MAX_COUNT 300
 #endif
@@ -356,7 +360,8 @@ String settingsFormHtml() {
   html += F("<div class='field'><label>Cablaggio matrice</label><select name='mapping'>");
   html += String("<option value='serpentine'") + (matrixSerpentine ? " selected" : "") + ">Serpentino</option>";
   html += String("<option value='linear'") + (!matrixSerpentine ? " selected" : "") + ">Lineare</option>";
-  html += F("</select></div><div class='field full'><p class='field-note'>Dimensioni e cablaggio sono usati per la geometria matrice. Le animazioni si applicano agli stati Teams; i lampeggi diagnostici restano invariati.</p>"In modalità manuale i LED mantengono il colore scelto e non seguono temporaneamente la presenza Teams.</p>"
+  html += F("</select></div><div class='field full'><p class='field-note'>Dimensioni e cablaggio sono usati per la geometria matrice. Le animazioni si applicano agli stati Teams; i lampeggi diagnostici restano invariati.</p>"
+            "<p class='field-note'>In modalità manuale i LED mantengono il colore scelto e non seguono temporaneamente la presenza Teams.</p>"
             "<button class='button primary' type='submit'>Salva impostazioni <span aria-hidden='true'>→</span></button>"
             "</div></form></div></section>");
   return html;
