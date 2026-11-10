@@ -6,6 +6,7 @@ const API = `https://api.github.com/repos/${OWNER}/${REPO}/releases`;
 const $ = (id) => document.getElementById(id);
 
 let releases = [];
+let previewReleases = [];
 let latestRelease = null;
 let transport = null;
 let esploader = null;
@@ -38,14 +39,27 @@ async function loadReleases() {
   try {
     const response = await fetch(API, { headers: { Accept: "application/vnd.github+json" } });
     if (!response.ok) throw new Error(`GitHub API: HTTP ${response.status}`);
-    releases = await response.json();
-    releases = releases.filter((release) => !release.draft && !release.prerelease);
+    const published = (await response.json()).filter((release) => !release.draft);
+    releases = published.filter((release) => !release.prerelease);
+    previewReleases = published.filter((release) => release.prerelease);
     latestRelease = releases[0] || null;
     renderReleases();
+    renderPreviewReleases();
     if (!latestRelease) {
-      $("latest-version").textContent = "Nessuna release";
-      $("latest-notes").textContent = "Le versioni saranno mostrate qui quando verranno pubblicate su GitHub.";
-      setStatus("Nessuna release firmware pubblicata. L’installer è pronto, ma non ci sono binari da installare.", "error");
+      $("latest-version").textContent = "Nessuna release stabile";
+      if (previewReleases.length) {
+        $("latest-notes").textContent = "È disponibile una versione preliminare nella sezione Versioni di test.";
+        const readyPreview = previewReleases.some(hasRequiredAssets);
+        setStatus(
+          readyPreview
+            ? "È disponibile una build di test. Apri Versioni di test per installarla."
+            : "È presente una pre-release, ma non contiene ancora tutti i file necessari.",
+          readyPreview ? "success" : "error"
+        );
+      } else {
+        $("latest-notes").textContent = "Le versioni saranno mostrate qui quando verranno pubblicate su GitHub.";
+        setStatus("Nessuna release firmware pubblicata. L’installer è pronto, ma non ci sono binari da installare.", "error");
+      }
       return;
     }
     $("latest-version").textContent = latestRelease.tag_name;
@@ -90,6 +104,33 @@ function renderReleases() {
     const button = document.createElement("button");
     button.className = "secondary";
     button.textContent = "Installa";
+    button.disabled = !hasRequiredAssets(release);
+    button.addEventListener("click", () => installRelease(release));
+    row.append(info, button);
+    list.append(row);
+  }
+}
+
+function renderPreviewReleases() {
+  const list = $("preview-release-list");
+  if (!previewReleases.length) {
+    list.innerHTML = '<div class="empty">Nessuna versione di test disponibile.</div>';
+    return;
+  }
+
+  list.replaceChildren();
+  for (const release of previewReleases) {
+    const row = document.createElement("div");
+    row.className = "release-item preview-release";
+    const info = document.createElement("div");
+    const version = document.createElement("strong");
+    version.textContent = release.tag_name;
+    const date = document.createElement("small");
+    date.textContent = "Pre-release · " + new Date(release.published_at || release.created_at).toLocaleDateString("it-IT");
+    info.append(version, date);
+    const button = document.createElement("button");
+    button.className = "secondary";
+    button.textContent = "Installa test";
     button.disabled = !hasRequiredAssets(release);
     button.addEventListener("click", () => installRelease(release));
     row.append(info, button);
