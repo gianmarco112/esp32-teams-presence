@@ -13,6 +13,7 @@ The device authenticates a Microsoft 365 user with OAuth 2.0 Device Code Flow, r
 
 ## Contents
 
+- [Overview](#overview)
 - [Features](#features)
 - [Hardware](#hardware)
 - [LED status mapping](#led-status-mapping)
@@ -25,6 +26,23 @@ The device authenticates a Microsoft 365 user with OAuth 2.0 Device Code Flow, r
 - [Security and privacy](#security-and-privacy)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
+
+## Overview
+
+The ESP32 connects to Wi-Fi, authenticates directly with Microsoft Entra ID, and periodically queries Microsoft Graph for the presence of the signed-in user. The returned status is translated into a colour on the WS2812B LED strip.
+
+![Teams Presence system architecture](docs/images/architecture.svg)
+
+<details>
+<summary>How the data flows</summary>
+
+1. The ESP32 connects to the configured Wi-Fi network.
+2. The user completes Microsoft Device Code sign-in.
+3. The firmware obtains and refreshes delegated OAuth tokens.
+4. Microsoft Graph returns the signed-in user's presence.
+5. FastLED updates the WS2812B strip to reflect the current status.
+
+</details>
 
 ## Features
 
@@ -56,7 +74,9 @@ The local control panel currently supports a configurable LED count (1–300), b
 
 The custom partition table in `partitions.csv` requires an ESP32 board with **at least 4 MB of flash**. The ESP32-S3 is not the target for this firmware configuration.
 
-### Wiring
+### Wiring diagram
+
+![ESP32 to WS2812B wiring diagram](docs/images/wiring.svg)
 
 | ESP32 / power supply | WS2812B | Description |
 |---|---|---|
@@ -80,17 +100,19 @@ See [docs/wiring.md](docs/wiring.md) for the wiring reference.
 
 | Microsoft presence | LED indication |
 |---|---|
-| Available | Green |
-| Busy | Red |
-| Do Not Disturb | Purple |
-| Away | Yellow |
-| Be Right Back | Orange |
-| Offline | Off |
-| Unknown / error | Blue blinking |
+| Available | 🟢 Green |
+| Busy | 🔴 Red |
+| Do Not Disturb | 🟣 Purple |
+| Away | 🟡 Yellow |
+| Be Right Back | 🟠 Orange |
+| Offline | ⚫ Off |
+| Unknown / error | 🔵 Blue blinking |
 
 A manual LED state can be selected from the local control panel. While manual mode is active, automatic presence changes do not override the selected LED state. Select **Automatic** to return to Teams-based indication.
 
 ## First-time setup
+
+![Setup and sign-in sequence](docs/images/setup-flow.svg)
 
 1. Flash the firmware using the [web installer](#web-firmware-installer) or PlatformIO.
 2. Power on the ESP32.
@@ -253,7 +275,11 @@ A successful CI build confirms compilation and packaging, not physical operation
 │       ├── firmware.yml       # Firmware build and release pipeline
 │       └── pages.yml          # Installer and release-asset deployment
 ├── docs/
-│   └── wiring.md              # ESP32 and WS2812B wiring
+│   ├── images/
+│   │   ├── architecture.svg  # System architecture diagram
+│   │   ├── setup-flow.svg     # Provisioning and sign-in flow
+│   │   └── wiring.svg         # ESP32 and WS2812B wiring diagram
+│   └── wiring.md              # ESP32 and WS2812B wiring reference
 ├── include/
 │   └── config.h.example       # Local firmware configuration template
 ├── installer/
@@ -266,7 +292,7 @@ A successful CI build confirms compilation and packaging, not physical operation
 ├── src/
 │   └── main.cpp               # ESP32 firmware
 ├── partitions.csv             # Custom 4 MB partition table
-└── platformio.ini             # PlatformIO environment and dependencies
+└── platformio.ini              # PlatformIO environment and dependencies
 ```
 
 ## Security and privacy
