@@ -13,10 +13,19 @@ let esptoolModulePromise = null;
 function loadEsptoolModule() {
   if (!esptoolModulePromise) {
     // Load the large, third-party flasher only when the user starts an install.
-    esptoolModulePromise = import("esptool-js").catch((error) => {
-      esptoolModulePromise = null;
-      throw new Error(`Impossibile caricare il modulo di flash da unpkg: ${error.message}`);
-    });
+    // Espressif's browser bundle includes its dependencies (including atob-lite).
+    // Importing lib/index.js directly leaves bare dependencies exposed to CDN export mismatches.
+    esptoolModulePromise = import("https://unpkg.com/esptool-js@0.7.1/bundle.js")
+      .then((module) => {
+        if (typeof module.ESPLoader !== "function" || typeof module.Transport !== "function") {
+          throw new Error("Il bundle esptool-js non espone ESPLoader e Transport.");
+        }
+        return module;
+      })
+      .catch((error) => {
+        esptoolModulePromise = null;
+        throw new Error(`Impossibile caricare il bundle ufficiale di Espressif: ${error.message}`);
+      });
   }
   return esptoolModulePromise;
 }
