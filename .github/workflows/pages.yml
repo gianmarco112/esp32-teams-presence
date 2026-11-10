@@ -56,7 +56,7 @@ jobs:
             gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$target"
           done
 
-          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq "[.[] | select(.draft == false) | select(any(.assets[]; .name == "manifest.json"))] | sort_by(.published_at) | last | .tag_name // empty")
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.draft == false) | select(any(.assets[]; .name == "manifest.json"))] | sort_by(.published_at) | last | .tag_name // empty')
           if [[ -n "$latest_tag" ]]; then
             python3 scripts/generate_ota_manifest.py \
               --version "$latest_tag" \
