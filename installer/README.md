@@ -6,15 +6,17 @@ Pagina web per installare Teams Presence su ESP32-WROOM-32D tramite USB, con Web
 
 1. Aprire **Settings → Pages** nel repository.
 2. In **Build and deployment → Source**, selezionare **GitHub Actions** e salvare.
-3. Questo passaggio iniziale è manuale: il workflow non può attivare GitHub Pages da solo con il token standard di Actions.
-4. Il workflow `.github/workflows/pages.yml` pubblica automaticamente il contenuto di `installer/` alla root del sito.
+3. Questo passaggio iniziale va eseguito una sola volta: il token standard di GitHub Actions non può abilitare GitHub Pages per un repository in cui il servizio non è ancora attivo.
+4. Il workflow `.github/workflows/pages.yml` pubblica il contenuto di `installer/` e scarica i binari delle GitHub Releases nella cartella statica `firmware/<tag>/`.
 5. URL previsto: https://gianmarco112.github.io/esp32-teams-presence/
 
 ## Pubblicazione delle release firmware
 
-L'installer recupera le GitHub Releases pubbliche del repository. La release più recente stabile viene proposta come installazione rapida; le altre vengono elencate nella sezione versioni precedenti. Le release draft e prerelease sono escluse.
+L'installer recupera l'elenco delle GitHub Releases pubbliche tramite API. La release stabile più recente viene proposta come installazione rapida; le altre release stabili vengono mostrate nella sezione versioni precedenti. Le release draft e prerelease sono escluse.
 
-Ogni release deve contenere un asset chiamato esattamente `manifest.json` e i file binari indicati nei suoi `path`. Esempio per la tabella partizioni standard ESP32:
+Ogni release stabile deve contenere un asset chiamato esattamente `manifest.json` e tutti i file binari indicati nei suoi `path`. Quando viene pubblicata una release, GitHub Actions scarica gli asset lato server e li copia nel sito GitHub Pages. L'installer li legge poi dallo stesso dominio del sito, evitando richieste browser dirette al CDN degli asset GitHub.
+
+Esempio per la tabella partizioni ESP32 standard:
 
 ```json
 {
@@ -34,7 +36,7 @@ Ogni release deve contenere un asset chiamato esattamente `manifest.json` e i fi
 }
 ```
 
-Gli offset dell'esempio corrispondono alla configurazione ESP32 Arduino/PlatformIO più comune, ma vanno verificati sui file generati dalla build effettiva prima di pubblicare una release. Non riutilizzare questi indirizzi alla cieca se viene modificata la tabella partizioni o la configurazione del framework.
+Gli offset dell'esempio sono quelli comunemente usati dalle build ESP32 Arduino/PlatformIO con tabella partizioni standard. Prima di pubblicare il firmware vanno comunque verificati contro la configurazione effettiva della build: non riutilizzarli se cambiano framework, bootloader o tabella partizioni.
 
 ## Requisiti browser
 
@@ -49,4 +51,3 @@ Gli offset dell'esempio corrispondono alla configurazione ESP32 Arduino/Platform
 - Il browser deve supportare Web Serial. Safari e iOS non sono supportati per questo flusso.
 - Questa prima versione non è ancora collaudata con i binari reali del firmware. Prima della distribuzione agli utenti occorre compilare il progetto, preparare una GitHub Release con i quattro file richiesti e provare il flash su una scheda di test.
 - Il flash non può essere verificato senza un dispositivo collegato fisicamente.
-
