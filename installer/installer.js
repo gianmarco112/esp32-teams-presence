@@ -112,6 +112,8 @@ async function installRelease(release) {
   $("flash-log").textContent = "";
   try {
     setProgress(0, `Installazione ${release.tag_name}`, "Seleziona la porta USB dell’ESP32.");
+    // requestPort must be called directly from the user's click, before any awaited fetch.
+    const selectedPort = await navigator.serial.requestPort();
     const manifest = await fetchManifest(release);
     if (!manifest.builds?.length) throw new Error("Manifest non valido: nessun build trovato.");
     const build = manifest.builds[0];
@@ -119,7 +121,6 @@ async function installRelease(release) {
     if (!build.parts?.length) throw new Error("Manifest non valido: nessuna partizione definita.");
 
     const manifestAsset = assetFor(release, "manifest.json");
-    const selectedPort = await navigator.serial.requestPort();
     transport = new Transport(selectedPort, true);
     const terminal = {
       clean() {},
