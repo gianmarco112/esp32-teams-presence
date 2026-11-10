@@ -12,8 +12,13 @@
 
 #include "config.h"
 
-#if !defined(MS_TENANT_ID) || !defined(MS_CLIENT_ID)
-#error "Copy include/config.h.example to include/config.h and configure Tenant ID and Client ID"
+// Optional compile-time defaults for developers with a private local config.h.
+// Production firmware ships with empty defaults and is configured from the web UI.
+#ifndef MS_TENANT_ID
+#define MS_TENANT_ID ""
+#endif
+#ifndef MS_CLIENT_ID
+#define MS_CLIENT_ID ""
 #endif
 
 #ifndef LED_MAX_COUNT
@@ -38,6 +43,8 @@ Preferences prefs;
 
 String accessToken;
 String refreshToken;
+String entraTenantId;
+String entraClientId;
 String authUser = "Non autenticato";
 String presenceText = "In attesa";
 String activityText = "-";
@@ -77,14 +84,34 @@ String encodeForm(const String& s) {
   return out;
 }
 
+bool isGuid(const String& value) {
+  if (value.length() != 36) return false;
+  for (size_t i = 0; i < value.length(); i++) {
+    const char c = value[i];
+    if (i == 8 || i == 13 || i == 18 || i == 23) {
+      if (c != '-') return false;
+      continue;
+    }
+    const bool digit = c >= '0' && c <= '9';
+    const bool lower = c >= 'a' && c <= 'f';
+    const bool upper = c >= 'A' && c <= 'F';
+    if (!digit && !lower && !upper) return false;
+  }
+  return true;
+}
+
+bool entraConfigured() {
+  return isGuid(entraTenantId) && isGuid(entraClientId);
+}
+
 String tokenUrl() {
   return String("https://login.microsoftonline.com/") +
-         MS_TENANT_ID + "/oauth2/v2.0/token";
+         entraTenantId + "/oauth2/v2.0/token";
 }
 
 String deviceCodeUrl() {
   return String("https://login.microsoftonline.com/") +
-         MS_TENANT_ID + "/oauth2/v2.0/devicecode";
+         entraTenantId + "/oauth2/v2.0/devicecode";
 }
 
 bool httpsRequest(const String& url, const String& method,
@@ -159,7 +186,25 @@ String settingsFormHtml() {
     {"Away", "Assente (giallo)"}, {"BeRightBack", "Torno subito (arancione)"},
     {"Offline", "Offline (spento)"}, {"Error", "Errore (blu)"}};
 
-  String html = F("<hr><h2>Impostazioni</h2><form method='post' action='/settings'>");
+  String html = F(
+    "<hr><h2>Microsoft Entra ID</h2>"
+    "<p class='muted'>Inserisci gli ID dell'App Registration della tua organizzazione. "
+    "Sono identificativi pubblici, non password o segreti.</p>"
+    "<form method='post' action='/entra'>"
+    "<label>Directory (tenant) ID</label>"
+    "<input type='text' name='tenant' minlength='36' maxlength='36' "
+    "autocomplete='off' autocapitalize='none' spellcheck='false' required value='"
+  );
+  html += htmlEscape(entraTenantId);
+  html += F("'>"
+            "<label>Application (client) ID</label>"
+            "<input type='text' name='client' minlength='36' maxlength='36' "
+            "autocomplete='off' autocapitalize='none' spellcheck='false' required value='");
+  html += htmlEscape(entraClientId);
+  html += F("'>"
+            "<button>Salva configurazione Microsoft</button></form>"
+            "<p class='muted'>Dopo il salvataggio potrai collegare l'account Microsoft.</p>");
+  html += F("<h2>Impostazioni dispositivo</h2><form method='post' action='/settings'>");
   html += "<label>Numero di LED (1-" + String(LED_MAX_COUNT) + ")</label>";
   html += "<input type='number' name='leds' min='1' max='" + String(LED_MAX_COUNT) +
           "' value='" + String(activeLeds) + "'>";
@@ -207,7 +252,9 @@ String pageHtml() {
     html += "<p style='color:#fca5a5'>Errore: " + htmlEscape(oauthError) + "</p>";
   }
 
-  if (deviceLoginPending) {
+  if (!entraConfigured()) {
+    html += "<hr><h2>Configura Microsoft</h2><p>Inserisci Tenant ID e Client ID nella sezione qui sotto, quindi salva la configurazione.</p>";
+  } else if (deviceLoginPending) {
     html += "<hr><h2>Accedi a Microsoft</h2><p>Apri il link e inserisci il codice:</p>";
     html += "<p><a target='_blank' href='" + htmlEscape(verificationUri) + "'>Apri Microsoft Device Login</a></p>";
     html += "<p class='code'>" + htmlEscape(userCode) + "</p>";
@@ -240,12 +287,17 @@ void handleRoot() {
 }
 
 void handleLogin() {
+  if (!entraConfigured()) {
+    oauthError = "Configura prima Tenant ID e Client ID nella pagina del dispositivo.";
+    server.send(400, "text/plain; charset=utf-8", oauthError);
+    return;
+  }
   if (!WiFi.isConnected()) {
     server.send(503, "text/plain", "Wi-Fi non connesso");
     return;
   }
 
-  String body = "client_id=" + encodeForm(MS_CLIENT_ID) +
+  String body = "client_id=" + encodeForm(entraClientId) +
                 "&scope=" + encodeForm("https://graph.microsoft.com/Presence.Read offline_access");
 
   String response;
@@ -280,6 +332,43 @@ void handleLogin() {
   setSolid(CRGB::Purple);
   server.sendHeader("Location", "/");
   server.send(303);
+}
+
+void handleEntraSave() {
+  String tenant = server.arg("tenant");
+  String client = server.arg("client");
+  tenant.trim();
+  client.trim();
+
+  if (!isGuid(tenant) || !isGuid(client)) {
+    server.send(400, "text/plain; charset=utf-8",
+                "Tenant ID e Client ID devono essere GUID validi (36 caratteri).");
+    return;
+  }
+
+  const bool changed = tenant != entraTenantId || client != entraClientId;
+  entraTenantId = tenant;
+  entraClientId = client;
+  prefs.putString("tenantId", entraTenantId);
+  prefs.putString("clientId", entraClientId);
+
+  if (changed) {
+    // Tokens are bound to the previous Entra application/tenant: force a fresh sign-in.
+    prefs.remove("refresh");
+    refreshToken = "";
+    accessToken = "";
+    tokenExpiryEpoch = 0;
+    graphReady = false;
+    deviceLoginPending = false;
+    deviceCode = "";
+    userCode = "";
+    authUser = "Non autenticato";
+    presenceText = "Configurazione Microsoft salvata";
+    activityText = "-";
+    setSolid(CRGB::Black);
+  }
+  oauthError = "";
+  handleSettingsRedirect();
 }
 
 void handleSettingsRedirect() {
@@ -393,7 +482,7 @@ void pollDeviceCode() {
   }
 
   String body =
-    "client_id=" + encodeForm(MS_CLIENT_ID) +
+    "client_id=" + encodeForm(entraClientId) +
     "&grant_type=" + encodeForm("urn:ietf:params:oauth:grant-type:device_code") +
     "&device_code=" + encodeForm(deviceCode);
 
@@ -434,10 +523,10 @@ void pollDeviceCode() {
 }
 
 bool refreshAccessToken() {
-  if (!refreshToken.length()) return false;
+  if (!entraConfigured() || !refreshToken.length()) return false;
 
   String body =
-    "client_id=" + encodeForm(MS_CLIENT_ID) +
+    "client_id=" + encodeForm(entraClientId) +
     "&grant_type=refresh_token" +
     "&refresh_token=" + encodeForm(refreshToken) +
     "&scope=" + encodeForm("https://graph.microsoft.com/Presence.Read offline_access");
@@ -511,6 +600,10 @@ void setup() {
   delay(300);
 
   prefs.begin("teams-presence", false);
+  const String defaultTenant = isGuid(String(MS_TENANT_ID)) ? String(MS_TENANT_ID) : "";
+  const String defaultClient = isGuid(String(MS_CLIENT_ID)) ? String(MS_CLIENT_ID) : "";
+  entraTenantId = prefs.getString("tenantId", defaultTenant);
+  entraClientId = prefs.getString("clientId", defaultClient);
   refreshToken = prefs.getString("refresh", "");
   activeLeds = constrain(prefs.getUShort("leds", LED_COUNT), 1, LED_MAX_COUNT);
   pollIntervalMs = constrain(prefs.getUInt("pollSec", PRESENCE_POLL_MS / 1000UL),
@@ -557,6 +650,7 @@ void setup() {
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/login", HTTP_POST, handleLogin);
+  server.on("/entra", HTTP_POST, handleEntraSave);
   server.on("/logout", HTTP_POST, handleLogout);
   server.on("/wifi", HTTP_POST, handleWifiChange);
   server.on("/settings", HTTP_GET, handleSettingsRedirect);
@@ -566,7 +660,7 @@ void setup() {
   Serial.print("Pagina configurazione: http://");
   Serial.println(WiFi.localIP());
 
-  if (refreshToken.length()) {
+  if (refreshToken.length() && entraConfigured()) {
     if (refreshAccessToken()) {
       authUser = "Account autenticato (endpoint /me)";
       graphReady = true;
@@ -575,6 +669,10 @@ void setup() {
       graphReady = false;
       Serial.println("Refresh token non valido: accedere dalla pagina web.");
     }
+  } else if (refreshToken.length() && !entraConfigured()) {
+    // A refresh token without its matching tenant/client configuration cannot be used safely.
+    prefs.remove("refresh");
+    refreshToken = "";
   }
 }
 
