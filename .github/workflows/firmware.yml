@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: firmware-${{ github.ref }}
@@ -56,11 +58,56 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          release_flags=()
+          release_title="Teams Presence $GITHUB_REF_NAME"
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_flags+=(--prerelease)
+            release_title="Teams Presence $GITHUB_REF_NAME (test build)"
+          fi
+
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
           else
             gh release create "$GITHUB_REF_NAME" dist/* \
               --repo "$GITHUB_REPOSITORY" \
-              --title "Teams Presence $GITHUB_REF_NAME" \
-              --generate-notes
+              --title "$release_title" \
+              --generate-notes \
+              "${release_flags[@]}"
           fi
+
+      - name: Configure GitHub Pages
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/configure-pages@v5
+
+      - name: Prepare installer site and stage releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p _site/firmware
+          cp -a installer/. _site/
+
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.draft == false) | select(any(.assets[]; .name == "manifest.json")) | .tag_name' |
+          while IFS= read -r tag; do
+            if [[ ! "$tag" =~ ^[A-Za-z0-9._-]+$ ]]; then
+              echo "Skipping release with unsupported tag name: $tag"
+              continue
+            fi
+            target="_site/firmware/$tag"
+            mkdir -p "$target"
+            echo "Downloading release assets for $tag"
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$target"
+          done
+
+      - name: Upload GitHub Pages artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+      - name: Deploy installer and firmware
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: deployment
+        uses: actions/deploy-pages@v4
