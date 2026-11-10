@@ -43,6 +43,7 @@ A standalone, Wi-Fi connected presence indicator powered by ESP32, Microsoft Gra
 - [Microsoft Entra ID configuration](#microsoft-entra-id-configuration)
 - [Build and upload locally](#build-and-upload-locally)
 - [Web firmware installer](#web-firmware-installer)
+- [Wireless firmware updates (OTA)](#wireless-firmware-updates-ota)
 - [Continuous integration and releases](#continuous-integration-and-releases)
 - [Repository layout](#repository-layout)
 - [Security and privacy](#security-and-privacy)
@@ -76,7 +77,8 @@ The ESP32 connects to Wi-Fi, authenticates directly with Microsoft Entra ID, and
 - **Addressable LEDs:** drives WS2812B LEDs through GPIO18 using FastLED.
 - **Local control panel:** view connection and presence information, connect or disconnect Microsoft, and configure the device.
 - **Persistent settings:** LED count, brightness, polling interval, and manual LED state are saved in NVS.
-- **Build automation:** GitHub Actions builds the firmware and packages the binary files used by the web installer.
+- **Build automation:** GitHub Actions builds versioned firmware, publishes releases, and generates OTA update metadata.
+- **Wireless updates:** check for new releases and install firmware from the local device dashboard over verified HTTPS, with SHA-256 validation.
 
 The local control panel currently supports a configurable LED count (1–300), brightness, and presence polling interval (10–3,600 seconds). The default polling interval is 60 seconds.
 
@@ -256,6 +258,23 @@ It provides:
 
 The installer only enables a release when the expected manifest and firmware assets are available. A successful browser flash does not replace testing the firmware on the actual board.
 
+## Wireless firmware updates (OTA)
+
+Once a firmware release has been published and GitHub Pages has deployed its update manifest, the ESP32 can update itself from its local control panel:
+
+1. Open the device dashboard from a browser on the same trusted network.
+2. In **Aggiornamento firmware**, select **Controlla aggiornamenti**.
+3. Review the available version and select **Aggiorna firmware**.
+4. Keep the ESP32 powered while the firmware is downloaded, verified, and installed. The device restarts automatically.
+
+The ESP32 retrieves `latest.json` from this project's GitHub Pages site over HTTPS. The manifest identifies the release, the firmware download URL, its expected size, and its SHA-256 digest. The firmware URL is restricted to this project's HTTPS Pages firmware directory; the device checks the downloaded size and SHA-256 digest before accepting the image.
+
+The update writes to the inactive OTA application slot. It does not erase the NVS partition, so Wi-Fi credentials, Microsoft Tenant ID / Client ID, refresh token, LED settings, and polling interval are retained. A normal OTA update does not rewrite the bootloader or partition table. USB recovery using the web installer remains available if needed.
+
+The manifest follows the newest published GitHub Release that contains the expected firmware assets, including pre-releases. Pre-release builds are labelled as test versions in the dashboard. A stable release automatically becomes the offered version when it is the newest published release.
+
+**Security note:** the local dashboard currently has no application-level password. Anyone who can reach it on the same network can request a firmware update or change device settings. Keep the ESP32 on a trusted LAN and do not expose its HTTP interface to the Internet.
+
 ## Continuous integration and releases
 
 The repository uses two GitHub Actions workflows:
@@ -336,7 +355,7 @@ A successful CI build confirms compilation and packaging, not physical operation
 - **Local web interface:** the device control page uses HTTP on the local network and currently has no application-level password. Keep the device on a trusted network and do not expose its web interface directly to the Internet.
 - **Physical access:** anyone with physical access or suitable access to the device's flash may be able to recover locally stored data unless additional ESP32 security features are configured.
 
-Secure Boot, Flash Encryption, OTA firmware updates, and production hardening are not currently implemented as part of this project. Review the threat model and apply appropriate device-level protections before deploying devices in sensitive environments.
+Secure Boot, Flash Encryption, automatic rollback validation, and production hardening are not currently implemented as part of this project. OTA image integrity is checked with SHA-256, but the local HTTP dashboard does not currently authenticate its users. Review the threat model and apply appropriate device-level protections before deploying devices in sensitive environments.
 
 ## Troubleshooting
 
@@ -350,7 +369,7 @@ Secure Boot, Flash Encryption, OTA firmware updates, and production hardening ar
 | Microsoft sign-in fails | Check the Tenant ID and Client ID saved on the ESP32, public-client flow setting, delegated `Presence.Read` permission, and tenant consent policy. |
 | LEDs flicker or show random colours | Check the 5 V supply and common ground. Try a data-line resistor and a 5 V-compatible level shifter. |
 | The web installer cannot see the ESP32 | Use Chrome or Edge on desktop, a USB data cable, the correct USB serial driver, and a direct USB connection. |
-| Firmware release is not listed | Confirm that the GitHub Release is published (not a draft or prerelease) and contains `manifest.json` plus all firmware binaries. |
+| OTA update is not offered | Check that GitHub Pages has deployed `latest.json`, that the newest published release contains `firmware.bin`, and that the device can reach the Pages site over HTTPS. |
 
 ## License
 
