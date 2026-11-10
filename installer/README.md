@@ -12,9 +12,11 @@ Pagina web per installare Teams Presence su ESP32-WROOM-32D tramite USB, con Web
 
 ## Pubblicazione delle release firmware
 
-L'installer recupera l'elenco delle GitHub Releases pubbliche tramite API. La release stabile più recente viene proposta come installazione rapida; le altre release stabili vengono mostrate nella sezione versioni precedenti. Le release draft e prerelease sono escluse.
+L'installer recupera l'elenco delle GitHub Releases pubbliche tramite API. La release stabile più recente viene proposta come installazione rapida; le altre release stabili vengono mostrate nella sezione versioni precedenti. Le prerelease sono raccolte separatamente nella sezione **Versioni di test** e non vengono proposte come installazione stabile. Le release draft sono escluse.
 
-Ogni release stabile deve contenere un asset chiamato esattamente `manifest.json` e tutti i file binari indicati nei suoi `path`. Quando viene pubblicata una release, GitHub Actions scarica gli asset lato server e li copia nel sito GitHub Pages. L'installer li legge poi dallo stesso dominio del sito, evitando richieste browser dirette al CDN degli asset GitHub.
+Ogni release stabile o prerelease installabile deve contenere un asset chiamato esattamente `manifest.json` e tutti i file binari indicati nei suoi `path`. Il workflow GitHub Pages scarica gli asset lato server e li copia nel sito GitHub Pages. L'installer li legge poi dallo stesso dominio del sito, evitando richieste browser dirette al CDN degli asset GitHub.
+
+Per pubblicare l'installer e sincronizzare le release già pubblicate, il workflow Pages viene eseguito su push dei file `installer/**` nel branch `main`. La creazione di release da GitHub Actions usa il token automatico e non avvia da sola altri workflow, quindi il push di aggiornamento dell'installer effettua anche la sincronizzazione dei relativi binari.
 
 Esempio per la tabella partizioni ESP32 standard:
 
