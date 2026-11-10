@@ -5,7 +5,7 @@
 #include <WebServer.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
-#include <FastLED.h>
+#include <Adafruit_NeoPixel.h>
 #include <WiFiManager.h>
 #include <time.h>
 #include <esp32_cert_bundle.h>
@@ -16,7 +16,7 @@
 #error "Copy include/config.h.example to include/config.h and configure Tenant ID and Client ID"
 #endif
 
-CRGB leds[LED_COUNT];
+Adafruit_NeoPixel leds(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 WebServer server(WEB_PORT);
 Preferences prefs;
 
@@ -93,15 +93,17 @@ bool httpsRequest(const String& url, const String& method,
   return status > 0;
 }
 
-void setSolid(const CRGB& color) {
-  fill_solid(leds, LED_COUNT, color);
-  FastLED.show();
+void setSolid(uint32_t color) {
+  for (uint16_t i = 0; i < LED_COUNT; ++i) {
+    leds.setPixelColor(i, color);
+  }
+  leds.show();
 }
 
 void setErrorBlink() {
   static bool on = false;
   on = !on;
-  setSolid(on ? CRGB::Blue : CRGB::Black);
+  setSolid(on ? leds.Color(0, 0, 255) : leds.Color(0, 0, 0));
 }
 
 String htmlEscape(String value) {
@@ -192,7 +194,7 @@ void handleLogin() {
   deviceLoginPending = true;
   nextDevicePoll = millis() + devicePollInterval * 1000UL;
   oauthError = "";
-  setSolid(CRGB::Purple);
+  setSolid(leds.Color(128, 0, 128));
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -206,7 +208,7 @@ void handleLogout() {
   presenceText = "Account scollegato";
   activityText = "-";
   deviceLoginPending = false;
-  setSolid(CRGB::Black);
+  setSolid(leds.Color(0, 0, 0));
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -247,7 +249,7 @@ void pollDeviceCode() {
   if ((uint32_t)(millis() - deviceCodeStartedAt) >= deviceCodeExpires * 1000UL) {
     deviceLoginPending = false;
     oauthError = "Codice scaduto. Avvia nuovamente il login.";
-    setSolid(CRGB::Blue);
+    setSolid(leds.Color(0, 0, 255));
     return;
   }
 
@@ -271,7 +273,7 @@ void pollDeviceCode() {
       deviceLoginPending = false;
       authUser = "Account autenticato (endpoint /me)";
       presenceText = "Autenticato – lettura presenza...";
-      setSolid(CRGB::Green);
+      setSolid(leds.Color(0, 255, 0));
     }
     return;
   }
@@ -287,7 +289,7 @@ void pollDeviceCode() {
   if (err == "authorization_declined" || err == "expired_token" ||
       err == "bad_verification_code") {
     deviceLoginPending = false;
-    setSolid(CRGB::Blue);
+    setSolid(leds.Color(0, 0, 255));
   }
 }
 
@@ -307,12 +309,12 @@ bool refreshAccessToken() {
 }
 
 void applyPresenceColor(const String& availability) {
-  if (availability == "Available") setSolid(CRGB::Green);
-  else if (availability == "Busy") setSolid(CRGB::Red);
-  else if (availability == "DoNotDisturb") setSolid(CRGB::Purple);
-  else if (availability == "Away") setSolid(CRGB::Yellow);
-  else if (availability == "BeRightBack") setSolid(CRGB::Orange);
-  else if (availability == "Offline") setSolid(CRGB::Black);
+  if (availability == "Available") setSolid(leds.Color(0, 255, 0));
+  else if (availability == "Busy") setSolid(leds.Color(255, 0, 0));
+  else if (availability == "DoNotDisturb") setSolid(leds.Color(128, 0, 128));
+  else if (availability == "Away") setSolid(leds.Color(255, 255, 0));
+  else if (availability == "BeRightBack") setSolid(leds.Color(255, 80, 0));
+  else if (availability == "Offline") setSolid(leds.Color(0, 0, 0));
   else setErrorBlink();
 }
 
@@ -324,7 +326,7 @@ void pollPresence() {
     if (!refreshAccessToken()) {
       graphReady = false;
       presenceText = "Sessione scaduta: riconnettere Microsoft";
-      setSolid(CRGB::Blue);
+      setSolid(leds.Color(0, 0, 255));
       return;
     }
   }
@@ -341,7 +343,7 @@ void pollPresence() {
     if (!refreshAccessToken()) {
       graphReady = false;
       presenceText = "Autenticazione richiesta";
-      setSolid(CRGB::Blue);
+      setSolid(leds.Color(0, 0, 255));
       return;
     }
     if (!httpsRequest(graphPresenceUrl, "GET", "", accessToken, response, status)) return;
@@ -371,9 +373,11 @@ void setup() {
   Serial.begin(115200);
   delay(300);
 
-  FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, LED_COUNT);
-  FastLED.setBrightness(LED_BRIGHTNESS);
-  setSolid(CRGB::Blue);
+  leds.begin();
+  leds.setBrightness(LED_BRIGHTNESS);
+  leds.clear();
+  leds.show();
+  setSolid(leds.Color(0, 0, 255));
 
   prefs.begin("teams-presence", false);
   refreshToken = prefs.getString("refresh", "");
@@ -386,7 +390,7 @@ void setup() {
 
   if (!connected) {
     Serial.println("Wi-Fi non configurato o timeout. Riavvia per riprovare.");
-    setSolid(CRGB::Red);
+    setSolid(leds.Color(255, 0, 0));
     return;
   }
 
@@ -414,7 +418,7 @@ void setup() {
     if (refreshAccessToken()) {
       authUser = "Account autenticato (endpoint /me)";
       graphReady = true;
-      setSolid(CRGB::Green);
+      setSolid(leds.Color(0, 255, 0));
     } else {
       graphReady = false;
       Serial.println("Refresh token non valido: accedere dalla pagina web.");
