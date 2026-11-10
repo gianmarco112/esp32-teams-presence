@@ -98,8 +98,9 @@ A manual LED state can be selected from the local control panel. While manual mo
 4. Connect a phone or computer to that Wi-Fi network and complete the WiFiManager network selection page.
 5. Find the device's IP address in the PlatformIO serial monitor (115200 baud).
 6. Open `http://<device-ip>/` from a device on the same local network.
-7. Select **Connect Microsoft**, open the Microsoft device sign-in page, and enter the displayed code.
-8. After sign-in completes, the ESP32 begins polling Microsoft Graph and updates the LEDs.
+7. In the local page, enter your organisation's **Directory (tenant) ID** and **Application (client) ID**, then select **Save Microsoft configuration**.
+8. Select **Connect Microsoft**, open the Microsoft device sign-in page, and enter the displayed code.
+9. After sign-in completes, the ESP32 begins polling Microsoft Graph and updates the LEDs.
 
 The local page also provides controls for LED count, brightness, polling interval, manual LED state, Microsoft sign-out, and Wi-Fi reconfiguration.
 
@@ -117,18 +118,18 @@ Create or configure the application in the Microsoft Entra admin center:
 
 The application uses Device Code Flow and does **not** use a client secret. The firmware requests the `Presence.Read` and `offline_access` scopes.
 
-### Configure GitHub Actions
+### Configure the device
 
-For tagged release builds, add the following repository variables under **Settings → Secrets and variables → Actions → Variables**:
+The firmware image is generic: it does not contain an organisation's Tenant ID or Client ID. After connecting the ESP32 to Wi-Fi, open its local web page and fill in:
 
-| Variable | Value |
+| Field | Value |
 |---|---|
-| `MS_TENANT_ID` | Directory (tenant) ID from the App Registration |
-| `MS_CLIENT_ID` | Application (client) ID from the App Registration |
+| **Directory (tenant) ID** | Directory (tenant) ID from your App Registration |
+| **Application (client) ID** | Application (client) ID from your App Registration |
 
-These values identify the public client application; they are not passwords or client secrets. Do not add a client secret to the firmware or repository.
+Select **Save Microsoft configuration**, then select **Connect Microsoft** to complete Device Code Flow. The two identifiers are stored in ESP32 NVS and remain available after a reboot. They are public application identifiers, not client secrets; never configure or upload a client secret to the device.
 
-Push builds can compile with placeholder IDs for CI validation. A tagged release build requires both valid GUID values.
+Changing either identifier invalidates the stored refresh token and requires the Microsoft account to sign in again. No GitHub Actions variables are required to build or publish the generic firmware.
 
 ### Presence scope
 
@@ -161,12 +162,9 @@ Copy-Item include/config.h.example include/config.h
 cp include/config.h.example include/config.h
 ```
 
-Edit `include/config.h` and set the values from your Microsoft Entra App Registration:
+Edit `include/config.h` only when you need to change hardware or firmware defaults. Tenant ID and Client ID are entered later from the ESP32 web page:
 
 ```cpp
-#define MS_TENANT_ID "YOUR_TENANT_ID"
-#define MS_CLIENT_ID "YOUR_CLIENT_ID"
-
 #define LED_PIN 18
 #define LED_COUNT 8
 #define LED_BRIGHTNESS 80
@@ -252,7 +250,6 @@ Do not publish a release tag until the CI build succeeds and the generated firmw
 │   ├── style.css
 │   └── README.md
 ├── scripts/
-│   ├── configure_firmware.py  # Generates config.h for CI
 │   └── package_firmware.py    # Packages binaries and manifest
 ├── src/
 │   └── main.cpp               # ESP32 firmware
@@ -265,6 +262,7 @@ Do not publish a release tag until the CI build succeeds and the generated firmw
 - **No backend service:** authentication and Microsoft Graph requests run directly from the ESP32.
 - **Delegated access:** the device requests the signed-in user's presence through Microsoft Graph `/me/presence`.
 - **TLS verification:** HTTPS requests use the ESP32 certificate bundle. Certificate verification must remain enabled.
+- **Configuration storage:** Tenant ID and Client ID are stored in ESP32 NVS. They are public application identifiers, not credentials or client secrets.
 - **Token storage:** the refresh token is stored in ESP32 NVS. Standard NVS storage is not automatically encrypted.
 - **Local web interface:** the device control page uses HTTP on the local network and currently has no application-level password. Keep the device on a trusted network and do not expose its web interface directly to the Internet.
 - **Physical access:** anyone with physical access or suitable access to the device's flash may be able to recover locally stored data unless additional ESP32 security features are configured.
@@ -277,7 +275,7 @@ Secure Boot, Flash Encryption, OTA firmware updates, and production hardening ar
 |---|---|
 | The setup Wi-Fi is not visible | Restart the ESP32 and check the serial output at 115200 baud. Confirm that the board has power. |
 | The local page does not open | Confirm that the computer is on the same network and use the IP address printed to Serial. |
-| Microsoft sign-in fails | Check the tenant and client IDs, public-client flow setting, delegated `Presence.Read` permission, and tenant consent policy. |
+| Microsoft sign-in fails | Check the Tenant ID and Client ID saved on the ESP32, public-client flow setting, delegated `Presence.Read` permission, and tenant consent policy. |
 | LEDs flicker or show random colours | Check the 5 V supply and common ground. Try a data-line resistor and a 5 V-compatible level shifter. |
 | The web installer cannot see the ESP32 | Use Chrome or Edge on desktop, a USB data cable, the correct USB serial driver, and a direct USB connection. |
 | Firmware release is not listed | Confirm that the GitHub Release is published (not a draft or prerelease) and contains `manifest.json` plus all firmware binaries. |
