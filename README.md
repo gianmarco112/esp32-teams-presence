@@ -4,7 +4,7 @@
 -->
 <div align="center">
 
-<img src="docs/images/brand-banner.svg" alt="Teams Presence for ESP32 — physical Teams status beacon" width="100%">\n\n<img src="docs/images/logo.svg" alt="Teams Presence beacon logo" width="112">
+<img src="docs/images/brand-banner.svg" alt="Teams Presence for ESP32 — physical Teams status beacon" width="100%"><img src="docs/images/logo.svg" alt="Teams Presence beacon logo" width="112">
 
 # Teams Presence for ESP32
 
