@@ -6,6 +6,7 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <FastLED.h>
+#include "led/LedRenderer.h"
 #include <WiFiManager.h>
 #include <Update.h>
 #include <mbedtls/md.h>
@@ -35,6 +36,12 @@
 #endif
 
 CRGB leds[LED_MAX_COUNT];
+LedRenderer ledRenderer;
+LedGeometry ledGeometry = LedGeometry::Strip;
+LedEffect ledEffect = LedEffect::Static;
+uint8_t matrixWidth = 8;
+uint8_t matrixHeight = 8;
+bool matrixSerpentine = true;
 uint16_t activeLeds = LED_COUNT;
 uint32_t pollIntervalMs = PRESENCE_POLL_MS;
 uint8_t brightnessPct = (LED_BRIGHTNESS * 100 + 127) / 255;
@@ -189,8 +196,15 @@ bool httpsRequest(const String& url, const String& method,
 }
 
 void showColor(const CRGB& c) {
+  ledRenderer.stop();
   fill_solid(leds, LED_MAX_COUNT, CRGB::Black);
   fill_solid(leds, activeLeds, c);
+  FastLED.show();
+}
+
+void showPresenceColor(const CRGB& c) {
+  ledRenderer.start(c, ledEffect, ledGeometry, matrixWidth, matrixHeight, matrixSerpentine);
+  ledRenderer.renderNow(millis());
   FastLED.show();
 }
 
@@ -209,21 +223,24 @@ void stopLedPattern() {
 }
 
 void updateLedPattern() {
-  if (!currentLedPattern || currentLedPatternLength == 0) return;
-  const uint32_t now = millis();
-  if ((uint32_t)(now - currentLedPhaseStarted) <
-      currentLedPattern[currentLedPhase].durationMs) return;
-
-  currentLedPhase = (currentLedPhase + 1) % currentLedPatternLength;
-  currentLedPhaseStarted = now;
-  showColor(currentLedPattern[currentLedPhase].color);
+  if (currentLedPattern && currentLedPatternLength > 0) {
+    const uint32_t now = millis();
+    if ((uint32_t)(now - currentLedPhaseStarted) >=
+        currentLedPattern[currentLedPhase].durationMs) {
+      currentLedPhase = (currentLedPhase + 1) % currentLedPatternLength;
+      currentLedPhaseStarted = now;
+      showColor(currentLedPattern[currentLedPhase].color);
+    }
+    return;
+  }
+  if (ledRenderer.update(millis())) FastLED.show();
 }
 
 // A manual state locks normal presence indications. Boot and Wi-Fi diagnostics bypass that lock.
 void setSolid(const CRGB& c) {
   if (manualState.length()) return;
   stopLedPattern();
-  showColor(c);
+  showPresenceColor(c);
 }
 
 bool stateColor(const String& s, CRGB& c) {
@@ -240,7 +257,7 @@ bool stateColor(const String& s, CRGB& c) {
 
 void applyManualState() {
   CRGB c;
-  if (manualState.length() && stateColor(manualState, c)) showColor(c);
+  if (manualState.length() && stateColor(manualState, c)) showPresenceColor(c);
 }
 
 void setErrorBlink() {
@@ -316,7 +333,30 @@ String settingsFormHtml() {
     if (manualState == s[0]) html += " selected";
     html += ">" + String(s[1]) + "</option>";
   }
-  html += F("</select></div><div class='field full'><p class='field-note'>In modalità manuale i LED mantengono il colore scelto e non seguono temporaneamente la presenza Teams.</p>"
+  html += F("</select></div><div class='field'><label>Geometria LED</label><select name='geometry'>");
+  const char* geometryNames[] = {"strip", "ring", "matrix"};
+  const char* geometryLabels[] = {"Striscia", "Cerchio / Ring", "Matrice"};
+  for (uint8_t i = 0; i < 3; i++) {
+    html += "<option value='" + String(geometryNames[i]) + "'";
+    if ((uint8_t)ledGeometry == i) html += " selected";
+    html += ">" + String(geometryLabels[i]) + "</option>";
+  }
+  html += F("</select></div><div class='field'><label>Animazione</label><select name='effect'>");
+  const char* effectNames[] = {"static", "pulse", "rainbow", "wave", "comet", "rotation", "radar"};
+  const char* effectLabels[] = {"Colore fisso", "Pulse / Respiro", "Rainbow", "Onda", "Cometa", "Rotazione", "Radar"};
+  for (uint8_t i = 0; i < 7; i++) {
+    html += "<option value='" + String(effectNames[i]) + "'";
+    if ((uint8_t)ledEffect == i) html += " selected";
+    html += ">" + String(effectLabels[i]) + "</option>";
+  }
+  html += F("</select></div><div class='field'><label>Larghezza matrice</label><input type='number' name='width' min='1' max='");
+  html += String(LED_MAX_COUNT) + "' value='" + String(matrixWidth) + "'></div>";
+  html += F("<div class='field'><label>Altezza matrice</label><input type='number' name='height' min='1' max='");
+  html += String(LED_MAX_COUNT) + "' value='" + String(matrixHeight) + "'></div>";
+  html += F("<div class='field'><label>Cablaggio matrice</label><select name='mapping'>");
+  html += String("<option value='serpentine'") + (matrixSerpentine ? " selected" : "") + ">Serpentino</option>";
+  html += String("<option value='linear'") + (!matrixSerpentine ? " selected" : "") + ">Lineare</option>";
+  html += F("</select></div><div class='field full'><p class='field-note'>Dimensioni e cablaggio sono usati per la geometria matrice. Le animazioni si applicano agli stati Teams; i lampeggi diagnostici restano invariati.</p>"In modalità manuale i LED mantengono il colore scelto e non seguono temporaneamente la presenza Teams.</p>"
             "<button class='button primary' type='submit'>Salva impostazioni <span aria-hidden='true'>→</span></button>"
             "</div></form></div></section>");
   return html;
@@ -601,12 +641,43 @@ void handleSettingsSave() {
     brightnessPct = constrain(server.arg("brightness").toInt(), 1, 100);
     prefs.putUChar("bright", brightnessPct);
     FastLED.setBrightness((brightnessPct * 255 + 50) / 100);
+    if (manualState.length()) applyManualState();
   }
   if (server.hasArg("refresh")) {
     uint32_t sec = constrain(server.arg("refresh").toInt(),
                              PRESENCE_POLL_MIN_S, PRESENCE_POLL_MAX_S);
     pollIntervalMs = sec * 1000UL;
     prefs.putUInt("pollSec", sec);
+  }
+  if (server.hasArg("geometry")) {
+    String value = server.arg("geometry");
+    if (value == "ring") ledGeometry = LedGeometry::Ring;
+    else if (value == "matrix") ledGeometry = LedGeometry::Matrix;
+    else ledGeometry = LedGeometry::Strip;
+    prefs.putUChar("geometry", (uint8_t)ledGeometry);
+  }
+  if (server.hasArg("effect")) {
+    String value = server.arg("effect");
+    if (value == "pulse") ledEffect = LedEffect::Pulse;
+    else if (value == "rainbow") ledEffect = LedEffect::Rainbow;
+    else if (value == "wave") ledEffect = LedEffect::Wave;
+    else if (value == "comet") ledEffect = LedEffect::Comet;
+    else if (value == "rotation") ledEffect = LedEffect::Rotation;
+    else if (value == "radar") ledEffect = LedEffect::Radar;
+    else ledEffect = LedEffect::Static;
+    prefs.putUChar("effect", (uint8_t)ledEffect);
+  }
+  if (server.hasArg("width")) {
+    matrixWidth = constrain(server.arg("width").toInt(), 1, LED_MAX_COUNT);
+    prefs.putUChar("width", matrixWidth);
+  }
+  if (server.hasArg("height")) {
+    matrixHeight = constrain(server.arg("height").toInt(), 1, LED_MAX_COUNT);
+    prefs.putUChar("height", matrixHeight);
+  }
+  if (server.hasArg("mapping")) {
+    matrixSerpentine = server.arg("mapping") == "serpentine";
+    prefs.putBool("serpentine", matrixSerpentine);
   }
   if (server.hasArg("state")) {
     String s = server.arg("state");
@@ -1233,9 +1304,15 @@ void setup() {
                              PRESENCE_POLL_MIN_S, PRESENCE_POLL_MAX_S) * 1000UL;
   manualState = prefs.getString("manual", "");
 
-  FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, LED_MAX_COUNT);
+  FastLED.addLeds<LED_CHIPSET, LED_PIN, GRB>(leds, LED_MAX_COUNT);
   brightnessPct = constrain(prefs.getUChar("bright", brightnessPct), 1, 100);
   FastLED.setBrightness((brightnessPct * 255 + 50) / 100);
+  ledGeometry = (LedGeometry)constrain(prefs.getUChar("geometry", 0), 0, 2);
+  ledEffect = (LedEffect)constrain(prefs.getUChar("effect", 0), 0, 6);
+  matrixWidth = constrain(prefs.getUChar("width", 8), 1, LED_MAX_COUNT);
+  matrixHeight = constrain(prefs.getUChar("height", 8), 1, LED_MAX_COUNT);
+  matrixSerpentine = prefs.getBool("serpentine", true);
+  ledRenderer.begin(leds, LED_MAX_COUNT, activeLeds);
   setLedPattern(BOOT_PATTERN,
                 sizeof(BOOT_PATTERN) / sizeof(BOOT_PATTERN[0]),
                 "Boot: 2 white flashes");
