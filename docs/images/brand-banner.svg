@@ -1,42 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520" role="img" aria-labelledby="title desc">
 <title id="title">Teams Presence for ESP32</title>
-<desc id="desc">A dark midnight blue branded banner with a glowing ESP32-inspired microchip, colourful status LEDs and the tagline Your Teams status, at a glance.</desc>
+<desc id="desc">A glowing purple physical status beacon with green, yellow, red and neutral presence lights.</desc>
 <defs>
  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0B1020"/><stop offset=".55" stop-color="#172449"/><stop offset="1" stop-color="#25245A"/></linearGradient>
- <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9B8CFF"/><stop offset="1" stop-color="#4D7CFE"/></linearGradient>
- <radialGradient id="glow"><stop stop-color="#766BFF" stop-opacity=".35"/><stop offset="1" stop-color="#766BFF" stop-opacity="0"/></radialGradient>
- <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="18"/></filter>
- <style>text{font-family:Inter,Segoe UI,Arial,sans-serif}.title{font-size:64px;font-weight:800;letter-spacing:-1.8px;fill:#F7F8FF}.tag{font-size:27px;font-weight:500;fill:#C4CBE0}.eyebrow{font-size:17px;font-weight:700;letter-spacing:4px;fill:#A99EFF}.small{font-size:15px;font-weight:600;letter-spacing:2px;fill:#B6C2DD}</style>
+ <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#D9D0FF"/><stop offset=".45" stop-color="#9C83FF"/><stop offset="1" stop-color="#6650D9"/></linearGradient>
+ <linearGradient id="base" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#303A5C"/><stop offset="1" stop-color="#10172B"/></linearGradient>
+ <radialGradient id="halo"><stop stop-color="#806AFF" stop-opacity=".42"/><stop offset="1" stop-color="#806AFF" stop-opacity="0"/></radialGradient>
+ <filter id="glow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="18"/></filter>
 </defs>
-<rect width="1600" height="520" rx="30" fill="url(#bg)"/>
-<circle cx="1280" cy="245" r="370" fill="url(#glow)"/>
-<path d="M0 425C330 340 420 555 760 435S1280 350 1600 435" stroke="#6877D9" stroke-opacity=".16" stroke-width="2" fill="none"/>
-<path d="M0 455C360 370 470 565 810 460S1310 380 1600 455" stroke="#9A8DFF" stroke-opacity=".12" stroke-width="2" fill="none"/>
-<g transform="translate(150 128)">
- <text class="eyebrow" x="0" y="0">CONNECTED WORKSPACE · ESP32 PROJECT</text>
- <text class="title" x="0" y="105">Teams Presence</text>
- <text class="title" x="0" y="178">for ESP32</text>
- <text class="tag" x="2" y="238">Your Teams status. At a glance.</text>
- <g transform="translate(0 292)">
-  <rect x="0" y="0" width="255" height="42" rx="21" fill="#FFFFFF" fill-opacity=".08" stroke="#A99EFF" stroke-opacity=".5"/>
-  <circle cx="23" cy="21" r="6" fill="#56D89A"/><text x="42" y="27" class="small">MICROSOFT GRAPH</text>
-  <rect x="270" y="0" width="160" height="42" rx="21" fill="#FFFFFF" fill-opacity=".08" stroke="#6D9BFF" stroke-opacity=".5"/>
-  <text x="350" y="27" text-anchor="middle" class="small">WI-FI · ESP32</text>
+<rect width="1600" height="520" rx="34" fill="url(#bg)"/>
+<circle cx="270" cy="260" r="290" fill="url(#halo)"/>
+<g transform="translate(65 28)">
+ <ellipse cx="210" cy="420" rx="190" ry="28" fill="#8873FF" opacity=".2" filter="url(#glow)"/>
+ <path d="M88 250v-92C88 75 143 20 210 20s122 55 122 138v92c0 24-19 43-43 43H131c-24 0-43-19-43-43Z" fill="#967BFF" opacity=".45" filter="url(#glow)"/>
+ <path d="M88 250v-92C88 75 143 20 210 20s122 55 122 138v92c0 24-19 43-43 43H131c-24 0-43-19-43-43Z" fill="url(#violet)" stroke="#D8CEFF" stroke-width="5"/>
+ <path d="M116 226v-67c0-57 39-103 94-112" fill="none" stroke="#FFF" stroke-opacity=".45" stroke-width="10" stroke-linecap="round"/>
+ <circle cx="210" cy="165" r="36" fill="#FFF" opacity=".24"/>
+ <rect x="55" y="278" width="310" height="142" rx="34" fill="url(#base)" stroke="#8D98C8" stroke-opacity=".65" stroke-width="4"/>
+ <path d="M78 293h264" stroke="#B8A8FF" stroke-width="5" stroke-linecap="round"/>
+ <g transform="translate(210 352)">
+  <circle cx="-90" r="12" fill="#38D987"/><circle cx="-30" r="12" fill="#F5C84B"/><circle cx="30" r="12" fill="#F45B67"/><circle cx="90" r="12" fill="#AAB4CC"/>
+  <circle cx="-90" r="23" fill="#38D987" opacity=".28" filter="url(#glow)"/><circle cx="-30" r="23" fill="#F5C84B" opacity=".24" filter="url(#glow)"/><circle cx="30" r="23" fill="#F45B67" opacity=".24" filter="url(#glow)"/>
  </g>
+ <text x="210" y="397" fill="#AEB9E6" font-family="Arial,sans-serif" font-size="17" font-weight="700" text-anchor="middle" letter-spacing="4">ESP32</text>
 </g>
-<g transform="translate(1130 105)">
- <circle cx="170" cy="155" r="160" fill="#7770FF" opacity=".12" filter="url(#shadow)"/>
- <rect x="68" y="50" width="205" height="205" rx="36" fill="#121D3A" stroke="url(#violet)" stroke-width="5"/>
- <rect x="95" y="77" width="151" height="151" rx="24" fill="#202D55" stroke="#8292F6" stroke-opacity=".7" stroke-width="2"/>
- <path d="M128 126h31l17 19 17-19h31v55h-31v-18l-17 18-17-18v18h-31z" fill="url(#violet)"/>
- <g stroke="#9C9BFF" stroke-width="7" stroke-linecap="round">
-  <path d="M91 28v22M130 28v22M169 28v22M208 28v22M247 28v22M91 255v22M130 255v22M169 255v22M208 255v22M247 255v22"/>
-  <path d="M46 78h22M46 117h22M46 156h22M46 195h22M273 78h22M273 117h22M273 156h22M273 195h22"/>
- </g>
- <g transform="translate(80 315)">
-  <circle cx="0" cy="0" r="12" fill="#53D996"/><circle cx="55" cy="0" r="12" fill="#F05D68"/><circle cx="110" cy="0" r="12" fill="#9C83FF"/><circle cx="165" cy="0" r="12" fill="#F3C75E"/><circle cx="220" cy="0" r="12" fill="#5C9BFF"/>
- </g>
+<g font-family="Arial,sans-serif">
+ <text x="500" y="174" fill="#AEB9D7" font-size="35" letter-spacing="7">ESP32</text>
+ <text x="495" y="264" fill="#FFFFFF" font-size="82" font-weight="700">Teams <tspan fill="#B7A2FF">Presence</tspan></text>
+ <rect x="500" y="302" width="5" height="55" rx="2.5" fill="#A88BFF"/>
+ <text x="530" y="343" fill="#E4E8F7" font-size="32">Your Teams status. <tspan fill="#B7A2FF" font-style="italic" font-weight="700">At a glance.</tspan></text>
+ <text x="530" y="408" fill="#AAB6D8" font-size="20" letter-spacing="2">A PHYSICAL STATUS LIGHT FOR MICROSOFT TEAMS</text>
 </g>
-<text x="1500" y="480" text-anchor="end" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="14" letter-spacing="3" fill="#8F9BB8">OPEN SOURCE · DIY · MICROSOFT 365</text>
+<g transform="translate(1245 120)" font-family="Arial,sans-serif" font-size="17" fill="#E5E8F7" text-anchor="middle">
+ <g><rect x="0" y="0" width="52" height="76" rx="24" fill="#38D987"/><rect x="6" y="57" width="40" height="27" rx="8" fill="#17233A"/><circle cx="26" cy="29" r="36" fill="#38D987" opacity=".18" filter="url(#glow)"/><text x="26" y="115">Available</text></g>
+ <g transform="translate(82)"><rect width="52" height="76" rx="24" fill="#F5C84B"/><rect x="6" y="57" width="40" height="27" rx="8" fill="#17233A"/><text x="26" y="115">Away</text></g>
+ <g transform="translate(164)"><rect width="52" height="76" rx="24" fill="#F45B67"/><rect x="6" y="57" width="40" height="27" rx="8" fill="#17233A"/><text x="26" y="115">Busy</text></g>
+ <g transform="translate(246)"><rect width="52" height="76" rx="24" fill="#AAB4CC"/><rect x="6" y="57" width="40" height="27" rx="8" fill="#17233A"/><text x="26" y="115">Offline</text></g>
+</g>
+<path d="M500 458H1515" stroke="#9B88FF" stroke-opacity=".45" stroke-width="2"/>
+<text x="1515" y="490" text-anchor="end" fill="#AAB6D8" font-family="Arial,sans-serif" font-size="16" letter-spacing="2">MICROSOFT GRAPH  •  WI-FI  •  RGB LED</text>
 </svg>
