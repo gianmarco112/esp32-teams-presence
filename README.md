@@ -15,7 +15,7 @@ A standalone, Wi-Fi connected presence indicator powered by ESP32, Microsoft Gra
 <p>
   <a href="https://github.com/gianmarco112/esp32-teams-presence/releases"><img src="https://img.shields.io/github/v/release/gianmarco112/esp32-teams-presence?style=for-the-badge&logo=github&label=Release&color=7567E8" alt="Latest release"></a>
   <a href="https://github.com/gianmarco112/esp32-teams-presence/actions/workflows/firmware.yml"><img src="https://img.shields.io/github/actions/workflow/status/gianmarco112/esp32-teams-presence/firmware.yml?style=for-the-badge&logo=githubactions&label=Firmware%20CI" alt="Firmware CI"></a>
-  <a href="https://github.com/gianmarco112/esp32-teams-presence/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-not%20specified-lightgrey?style=for-the-badge" alt="License not specified"></a>
+  <a href="https://github.com/gianmarco112/esp32-teams-presence/blob/main/LICENSE"><img src="https://img.shields.io/github/license/gianmarco112/esp32-teams-presence?style=for-the-badge&color=2EA44F" alt="MIT License"></a>
 </p>
 
 <p>
@@ -342,4 +342,10 @@ Secure Boot, Flash Encryption, OTA firmware updates, and production hardening ar
 
 ## License
 
-No `LICENSE` file is currently included in this repository. Until a license is added, reuse and redistribution permissions have not been explicitly granted. Add a license before presenting the project as an openly licensed distribution.
+This project is licensed under the **MIT License**. You may use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the software, subject to the conditions in the [LICENSE](LICENSE) file.
+
+The firmware depends on third-party libraries. Their respective licenses and notices continue to apply; see the upstream projects for details.
+
+## Disclaimer
+
+This is an independent community project and is **not affiliated with, endorsed by, or sponsored by Microsoft**. Microsoft Teams, Microsoft Graph, and Microsoft Entra are trademarks of the Microsoft group of companies.
