@@ -790,6 +790,11 @@ void setup() {
   setLedPattern(BOOT_PATTERN,
                 sizeof(BOOT_PATTERN) / sizeof(BOOT_PATTERN[0]),
                 "Boot: 2 white flashes");
+  // Play the short boot signature before starting the Wi-Fi connection attempt.
+  for (uint16_t i = 0; i < 100; i++) {
+    updateLedPattern();
+    delay(10);
+  }
 
   // Hold the ESP32 BOOT button (GPIO0) while powering on to forget old Wi-Fi credentials.
   pinMode(0, INPUT_PULLUP);
