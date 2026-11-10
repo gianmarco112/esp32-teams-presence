@@ -62,7 +62,7 @@ jobs:
           retention-days: 30
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-test/') || startsWith(github.ref, 'refs/heads/release-test/')
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-test/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -92,7 +92,7 @@ jobs:
 
 
   deploy:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-test/')
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -107,11 +107,11 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Configure GitHub Pages
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-test/')
         uses: actions/configure-pages@v5
 
       - name: Prepare installer site and stage releases
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-test/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -133,12 +133,12 @@ jobs:
           done
 
       - name: Upload GitHub Pages artifact
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-test/')
         uses: actions/upload-pages-artifact@v4
         with:
           path: _site
 
       - name: Deploy installer and firmware
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-test/')
         id: deployment
         uses: actions/deploy-pages@v4
