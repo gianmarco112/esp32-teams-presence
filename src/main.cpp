@@ -910,8 +910,8 @@ bool isNewerFirmwareVersion(const String& latest, const String& current) {
   String lPre, cPre;
   if (!parseFirmwareVersion(latest, lMajor, lMinor, lPatch, lPre) ||
       !parseFirmwareVersion(current, cMajor, cMinor, cPatch, cPre)) {
-    // Development builds use a dev-<commit> identifier and can update to a tagged release.
-    return true;
+    // Do not offer updates for unknown/development version schemes: that could downgrade a dev build.
+    return false;
   }
   if (lMajor != cMajor) return lMajor > cMajor;
   if (lMinor != cMinor) return lMinor > cMinor;
