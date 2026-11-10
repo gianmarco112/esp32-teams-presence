@@ -6,6 +6,8 @@ on:
     paths:
       - "installer/**"
       - ".github/workflows/pages.yml"
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -30,10 +32,33 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
+      - name: Prepare site and stage release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p _site/firmware
+          cp -a installer/. _site/
+
+          # Release files are downloaded server-side and served by Pages.
+          # This avoids browser CORS restrictions on GitHub release-asset URLs.
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false) | select(any(.assets[]; .name == "manifest.json")) | .tag_name' |
+          while IFS= read -r tag; do
+            if [[ ! "$tag" =~ ^[A-Za-z0-9._-]+$ ]]; then
+              echo "Skipping release with unsupported tag name: $tag"
+              continue
+            fi
+            target="_site/firmware/$tag"
+            mkdir -p "$target"
+            echo "Downloading release assets for $tag"
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$target"
+          done
+
       - name: Upload installer
         uses: actions/upload-pages-artifact@v4
         with:
-          path: installer
+          path: _site
 
       - name: Deploy
         id: deployment
