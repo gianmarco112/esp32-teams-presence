@@ -63,6 +63,7 @@ uint32_t tokenExpiryEpoch = 0;
 uint32_t lastPresencePoll = 0;
 bool deviceLoginPending = false;
 bool graphReady = false;
+bool presenceReady = false;  // True only after a successful Microsoft Graph /me/presence response.
 bool wifiReady = false;
 
 struct LedPhase {
@@ -251,109 +252,217 @@ String htmlEscape(String s) {
   return s;
 }
 
+String entraSettingsHtml() {
+  const bool operational = graphReady && presenceReady && !deviceLoginPending;
+  String html = F("<details class='card section' ");
+  if (!operational) html += F("open ");
+  html += F("><summary><span class='section-icon'>ID</span><span class='summary-copy'>"
+            "<strong>Microsoft Entra ID</strong><small>Configurazione dell'applicazione e dell'accesso</small></span>"
+            "<span class='summary-status'>");
+  html += operational ? F("<span class='pill success'>Configurato</span>") :
+            (entraConfigured() ? F("<span class='pill neutral'>Configurazione</span>") :
+                                 F("<span class='pill warning'>Da configurare</span>"));
+  html += F("</span><span class='chevron' aria-hidden='true'>⌄</span></summary>"
+            "<div class='section-body'><p class='muted'>Gli identificativi dell'app Entra sono pubblici: non inserire qui password o client secret.</p>"
+            "<form method='post' action='/entra' class='form-grid'>"
+            "<div class='field full'><label>Directory (tenant) ID</label>"
+            "<input type='text' name='tenant' minlength='36' maxlength='36' autocomplete='off' "
+            "autocapitalize='none' spellcheck='false' required value='");
+  html += htmlEscape(entraTenantId);
+  html += F("'></div><div class='field full'><label>Application (client) ID</label>"
+            "<input type='text' name='client' minlength='36' maxlength='36' autocomplete='off' "
+            "autocapitalize='none' spellcheck='false' required value='");
+  html += htmlEscape(entraClientId);
+  html += F("'></div><div class='field full actions'><button class='button primary' type='submit'>"
+            "Salva configurazione <span aria-hidden='true'>→</span></button></div></form>"
+            "<div class='hint'><span class='hint-icon'>i</span><span>Per funzionare, l'app registrata deve avere il permesso Microsoft Graph delegato <b>Presence.Read</b> "
+            "e i flussi client pubblici abilitati.</span></div></div></details>");
+  return html;
+}
+
 String settingsFormHtml() {
   static const char* const states[][2] = {
-    {"", "Automatico (segue Teams)"}, {"Available", "Disponibile (verde)"},
-    {"Busy", "Occupato (rosso)"}, {"DoNotDisturb", "Non disturbare (viola)"},
-    {"Away", "Assente (giallo)"}, {"BeRightBack", "Torno subito (arancione)"},
-    {"Offline", "Offline (spento)"}, {"Error", "Errore (blu)"}};
+    {"", "Automatico · segue Teams"}, {"Available", "Disponibile · verde"},
+    {"Busy", "Occupato · rosso"}, {"DoNotDisturb", "Non disturbare · viola"},
+    {"Away", "Assente · giallo"}, {"BeRightBack", "Torno subito · arancione"},
+    {"Offline", "Offline · spento"}, {"Error", "Errore · blu"}};
 
   String html = F(
-    "<hr><h2>Microsoft Entra ID</h2>"
-    "<p class='muted'>Inserisci gli ID dell'App Registration della tua organizzazione. "
-    "Sono identificativi pubblici, non password o segreti.</p>"
-    "<form method='post' action='/entra'>"
-    "<label>Directory (tenant) ID</label>"
-    "<input type='text' name='tenant' minlength='36' maxlength='36' "
-    "autocomplete='off' autocapitalize='none' spellcheck='false' required value='"
+    "<section class='card section'><div class='section-heading'>"
+    "<span class='section-icon'>LED</span><span class='summary-copy'><strong>Illuminazione e dispositivo</strong>"
+    "<small>Personalizza il comportamento della striscia LED</small></span></div>"
+    "<div class='section-body'><form method='post' action='/settings' class='form-grid'>"
+    "<div class='field'><label>Numero di LED</label><input type='number' name='leds' min='1' max='"
   );
-  html += htmlEscape(entraTenantId);
-  html += F("'>"
-            "<label>Application (client) ID</label>"
-            "<input type='text' name='client' minlength='36' maxlength='36' "
-            "autocomplete='off' autocapitalize='none' spellcheck='false' required value='");
-  html += htmlEscape(entraClientId);
-  html += F("'>"
-            "<button>Salva configurazione Microsoft</button></form>"
-            "<p class='muted'>Dopo il salvataggio potrai collegare l'account Microsoft.</p>");
-  html += F("<h2>Impostazioni dispositivo</h2><form method='post' action='/settings'>");
-  html += "<label>Numero di LED (1-" + String(LED_MAX_COUNT) + ")</label>";
-  html += "<input type='number' name='leds' min='1' max='" + String(LED_MAX_COUNT) +
-          "' value='" + String(activeLeds) + "'>";
-  html += "<label>Luminosità: <span id='bv'>" + String(brightnessPct) + "</span>%</label>";
-  html += "<input type='range' name='brightness' min='1' max='100' value='" +
-          String(brightnessPct) + "' oninput=\"document.getElementById('bv').textContent=this.value\">";
-  html += "<label>Intervallo di aggiornamento (secondi, " + String(PRESENCE_POLL_MIN_S) +
-          "-" + String(PRESENCE_POLL_MAX_S) + ")</label>";
-  html += "<input type='number' name='refresh' min='" + String(PRESENCE_POLL_MIN_S) +
-          "' max='" + String(PRESENCE_POLL_MAX_S) + "' value='" +
-          String(pollIntervalMs / 1000UL) + "'>";
-  html += "<label>Stato LED</label><select name='state'>";
+  html += String(LED_MAX_COUNT) + "' value='" + String(activeLeds) + "'>";
+  html += F("</div><div class='field'><label>Luminosità <output id='bv'>");
+  html += String(brightnessPct);
+  html += F("%</output></label><input type='range' name='brightness' min='1' max='100' value='");
+  html += String(brightnessPct);
+  html += F("' oninput=\"document.getElementById('bv').textContent=this.value+'%'\">"
+            "</div><div class='field'><label>Intervallo di aggiornamento</label><div class='input-unit'>"
+            "<input type='number' name='refresh' min='");
+  html += String(PRESENCE_POLL_MIN_S) + "' max='" + String(PRESENCE_POLL_MAX_S) +
+          "' value='" + String(pollIntervalMs / 1000UL) + "'><span>secondi</span></div></div>";
+  html += F("<div class='field'><label>Modalità LED</label><select name='state'>");
   for (auto& s : states) {
     html += "<option value='" + String(s[0]) + "'";
     if (manualState == s[0]) html += " selected";
     html += ">" + String(s[1]) + "</option>";
   }
-  html += F("</select><p class='muted'>Con uno stato manuale i LED ignorano la presenza "
-            "di Teams finché non torni su Automatico.</p><button>Salva</button></form>");
+  html += F("</select></div><div class='field full'><p class='field-note'>In modalità manuale i LED mantengono il colore scelto e non seguono temporaneamente la presenza Teams.</p>"
+            "<button class='button primary' type='submit'>Salva impostazioni <span aria-hidden='true'>→</span></button>"
+            "</div></form></div></section>");
   return html;
 }
 
 String pageHtml() {
-  String html = F(
-    "<!doctype html><html lang='it'><head><meta charset='utf-8'>"
-    "<meta name='viewport' content='width=device-width,initial-scale=1'>");
-  // Auto-refresh only while waiting for login, so form edits are not discarded.
+  String html;
+  html.reserve(10500);
+  html += F("<!doctype html><html lang='it'><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<meta name='theme-color' content='#0b1020'>");
+  // Refresh only during the Device Code flow so the displayed code remains current.
   if (deviceLoginPending) html += F("<meta http-equiv='refresh' content='5'>");
-  html += F(
-    "<title>Teams Presence</title><style>"
-    "label{display:block;margin:16px 0 6px}input,select{width:100%;padding:10px;"
-    "border-radius:8px;box-sizing:border-box}"
-    "body{font-family:system-ui;max-width:620px;margin:35px auto;padding:0 18px;"
-    "background:#101722;color:#eef3fa}main{background:#1b2736;padding:24px;"
-    "border-radius:16px}a,button{color:white;background:#2563eb;padding:12px 16px;"
-    "border:0;border-radius:9px;text-decoration:none;display:inline-block}"
-    ".muted{color:#a9b8ca}.code{font-size:2rem;letter-spacing:3px;font-weight:700}"
-    "</style></head><body><main><h1>Teams Presence</h1>"
+  html += F("<title>Teams Presence · ESP32</title><style>"
+    ":root{color-scheme:dark;--bg:#0b1020;--surface:#121b2d;--surface2:#18243a;--line:rgba(160,180,220,.14);"
+    "--text:#edf3ff;--muted:#91a1bc;--blue:#6c8cff;--green:#38d99a;--amber:#f5bb58;--red:#ff7185}"
+    "*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 12% 0%,rgba(70,104,210,.18),transparent 38%),"
+    "radial-gradient(ellipse at 100% 28%,rgba(22,181,156,.09),transparent 32%),var(--bg);color:var(--text);"
+    "font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}"
+    ".shell{width:min(920px,100%);margin:0 auto;padding:30px 22px 42px}.topbar{display:flex;align-items:center;justify-content:space-between;"
+    "gap:16px;margin-bottom:24px}.brand{display:flex;align-items:center;gap:13px}.brandmark{width:46px;height:46px;border-radius:15px;"
+    "display:grid;place-items:center;background:linear-gradient(145deg,#6889ff,#7156d9);box-shadow:0 8px 30px rgba(85,108,255,.28);"
+    "font-size:22px;font-weight:800}.brand h1{font-size:21px;letter-spacing:-.5px;margin:0;line-height:1.2}.brand h1 span{color:#91aaff}"
+    ".eyebrow{font-size:10px;letter-spacing:1.7px;font-weight:800;color:#92a6ca;margin-bottom:4px}"
+    ".top-pill,.pill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;padding:7px 11px;"
+    "font-size:11px;font-weight:750;color:#b7c5dc;background:rgba(255,255,255,.035);white-space:nowrap}"
+    ".dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 12px currentColor}"
+    ".hero{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(220px,.7fr);gap:22px;padding:25px;"
+    "border:1px solid rgba(139,164,255,.2);border-radius:22px;background:linear-gradient(115deg,rgba(39,57,95,.94),rgba(20,31,52,.96));"
+    "box-shadow:0 18px 55px rgba(0,0,0,.2);margin-bottom:16px}.presence-line{display:flex;align-items:center;gap:12px;margin:8px 0 3px}"
+    ".presence-title{font-size:clamp(26px,5vw,37px);line-height:1.12;letter-spacing:-1px;margin:0;font-weight:800}"
+    ".presence-title.available{color:#61e4ad}.presence-title.busy{color:#ff8595}.presence-title.dnd{color:#c39cff}"
+    ".presence-title.away{color:#ffd071}.presence-title.neutral{color:#e9efff}"
+    ".presence-orb{width:13px;height:13px;border-radius:50%;background:#a5b5d2;box-shadow:0 0 0 6px rgba(165,181,210,.1)}"
+    ".presence-orb.available{background:#43d99c;box-shadow:0 0 0 6px rgba(67,217,156,.13)}"
+    ".presence-orb.busy{background:#ff7185;box-shadow:0 0 0 6px rgba(255,113,133,.13)}"
+    ".presence-orb.dnd{background:#b58aff}.presence-orb.away{background:#f5bb58}"
+    ".hero-sub{color:#b3c1d9;margin:8px 0 0}.hero-stats{display:grid;gap:10px;align-content:center}"
+    ".metric{border:1px solid rgba(180,197,230,.13);border-radius:14px;padding:12px 14px;background:rgba(7,13,27,.22)}"
+    ".metric span{display:block;color:#91a1bc;font-size:11px;margin-bottom:2px}.metric strong{font-size:14px;font-weight:750}"
+    ".section{border:1px solid var(--line);border-radius:18px;background:linear-gradient(145deg,rgba(20,31,51,.96),rgba(15,24,41,.96));"
+    "margin:13px 0;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.12)}"
+    ".section-heading,details>summary{display:flex;align-items:center;gap:13px;padding:18px 20px}"
+    "details>summary{cursor:pointer;list-style:none;user-select:none}details>summary::-webkit-details-marker{display:none}"
+    ".summary-copy{display:flex;flex:1;min-width:0;flex-direction:column}.summary-copy strong{font-size:15px;font-weight:760}"
+    ".summary-copy small{font-size:12px;color:var(--muted);margin-top:2px}.section-icon{width:37px;height:37px;flex:0 0 37px;"
+    "border-radius:12px;display:grid;place-items:center;background:rgba(108,140,255,.13);color:#9cb1ff;font-size:10px;font-weight:850;letter-spacing:.4px}"
+    ".chevron{color:#8294b4;font-size:20px;transition:transform .2s}details[open] .chevron{transform:rotate(180deg)}"
+    ".section-body{padding:0 20px 20px;border-top:1px solid rgba(160,180,220,.09)}"
+    ".muted{color:var(--muted);font-size:13px}.pill.success{color:#72e5b2;border-color:rgba(56,217,154,.28);background:rgba(56,217,154,.08)}"
+    ".pill.warning{color:#ffd17b;border-color:rgba(245,187,88,.28);background:rgba(245,187,88,.08)}"
+    ".pill.neutral{color:#aebfff}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px 18px;margin-top:14px}"
+    ".field{min-width:0}.field.full{grid-column:1/-1}label{display:flex;justify-content:space-between;gap:10px;"
+    "font-size:12px;font-weight:700;color:#c4d0e4;margin:0 0 7px}output{color:#9db1ff}"
+    "input,select{width:100%;border:1px solid rgba(151,172,212,.2);border-radius:11px;padding:11px 12px;"
+    "background:#0d1729;color:var(--text);font:inherit;outline:none;transition:border .15s,box-shadow .15s}"
+    "input:focus,select:focus{border-color:#829cff;box-shadow:0 0 0 3px rgba(108,140,255,.13)}"
+    "input[type=range]{padding:8px 0;border:0;background:transparent;accent-color:#829cff}"
+    ".input-unit{display:flex;align-items:center;gap:10px}.input-unit span{color:var(--muted);font-size:12px;white-space:nowrap}"
+    ".button{display:inline-flex;justify-content:center;align-items:center;gap:10px;border:0;border-radius:11px;"
+    "padding:11px 15px;font:700 13px inherit;text-decoration:none;cursor:pointer;transition:transform .15s,filter .15s}"
+    ".button:hover{filter:brightness(1.1);transform:translateY(-1px)}.button.primary{background:linear-gradient(110deg,#6586ff,#8066e9);"
+    "color:white;box-shadow:0 7px 20px rgba(90,113,245,.2)}.button.danger{background:rgba(255,113,133,.1);"
+    "color:#ff9aaa;border:1px solid rgba(255,113,133,.25)}.actions{display:flex;align-items:center;justify-content:flex-start}"
+    ".field-note{font-size:12px;color:var(--muted);margin:0 0 12px}.hint{display:flex;gap:10px;margin-top:17px;padding:12px 13px;"
+    "border-radius:12px;background:rgba(108,140,255,.07);color:#aab9d3;font-size:12px}.hint-icon{width:19px;height:19px;flex:0 0 19px;"
+    "border-radius:50%;display:grid;place-items:center;background:rgba(108,140,255,.2);color:#a8b9ff;font-weight:800}"
+    ".account-card{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:17px 20px}"
+    ".account-copy{display:flex;align-items:center;gap:12px;min-width:0}.account-mark{width:38px;height:38px;flex:0 0 38px;"
+    "display:grid;place-items:center;border-radius:12px;background:rgba(56,217,154,.1);color:#62e2ac;font-size:17px}"
+    ".account-card.pending .account-mark{background:rgba(245,187,88,.1);color:#ffd078}"
+    ".account-card strong{display:block;font-size:14px}.account-card small{display:block;color:var(--muted);font-size:12px;margin-top:2px}"
+    ".alert{border:1px solid rgba(255,113,133,.22);border-radius:13px;padding:12px 14px;background:rgba(255,113,133,.07);"
+    "color:#ffb0ba;font-size:13px;margin:13px 0}.login-box{padding:18px 20px}.login-box .code{font-size:clamp(30px,8vw,42px);"
+    "letter-spacing:5px;font-weight:850;color:#fff;background:rgba(108,140,255,.12);border:1px dashed rgba(145,166,255,.35);"
+    "padding:13px 18px;border-radius:14px;display:inline-block;margin:10px 0}.login-box a{color:#aebfff}"
+    ".network-line{display:flex;justify-content:space-between;gap:16px;align-items:center;margin:0 0 14px}"
+    ".network-line span{color:var(--muted);font-size:12px}.network-line strong{font-size:13px;text-align:right;overflow-wrap:anywhere}"
+    ".footer{text-align:center;color:#657795;font-size:11px;margin-top:24px}"
+    "@media(max-width:650px){.shell{padding:20px 14px 32px}.topbar{align-items:flex-start}.top-pill{font-size:10px;padding:6px 8px}"
+    ".hero{grid-template-columns:1fr;padding:20px}.hero-stats{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}"
+    ".field.full{grid-column:auto}.summary-status{display:none}.account-card{align-items:flex-start;flex-direction:column}.account-card form{width:100%}"
+    ".account-card .button{width:100%}.network-line{align-items:flex-start;flex-direction:column;gap:3px}.network-line strong{text-align:left}}"
+    "</style></head><body><div class='shell'>"
+    "<header class='topbar'><div class='brand'><div class='brandmark'>TP</div><div>"
+    "<div class='eyebrow'>SMART PRESENCE · ESP32</div><h1>Teams <span>Presence</span></h1>"
+    "</div></div><div class='top-pill'><i class='dot'></i> Dispositivo online</div></header>"
   );
-  html += "<p class='muted'>Dispositivo ESP32-WROOM-32D</p>";
-  html += "<h2>Stato: " + htmlEscape(presenceText) + "</h2>";
-  html += "<p>Attività: " + htmlEscape(activityText) + "</p>";
-  html += "<p>Account: " + htmlEscape(authUser) + "</p>";
+
+  String presenceClass = "neutral";
+  if (presenceText == "Available") presenceClass = "available";
+  else if (presenceText == "Busy") presenceClass = "busy";
+  else if (presenceText == "DoNotDisturb") presenceClass = "dnd";
+  else if (presenceText == "Away" || presenceText == "BeRightBack") presenceClass = "away";
+
+  html += F("<section class='hero'><div><div class='eyebrow'>PRESENZA MICROSOFT TEAMS</div><div class='presence-line'><span class='presence-orb ");
+  html += presenceClass + "'></span><h2 class='presence-title " + presenceClass + "'>";
+  html += htmlEscape(presenceText);
+  html += F("</h2></div><p class='hero-sub'>Attività: ");
+  html += htmlEscape(activityText);
+  html += F("</p></div><div class='hero-stats'><div class='metric'><span>Account Microsoft</span><strong>");
+  html += presenceReady ? F("Collegato e operativo") : (graphReady ? F("Token acquisito · verifica Graph") : F("Non collegato"));
+  html += F("</strong></div><div class='metric'><span>Aggiornamento presenza</span><strong>Ogni ");
+  html += String(pollIntervalMs / 1000UL) + " secondi</strong></div></div></section>");
+
   if (oauthError.length()) {
-    html += "<p style='color:#fca5a5'>Errore: " + htmlEscape(oauthError) + "</p>";
+    html += F("<div class='alert'><b>Attenzione</b><br>");
+    html += htmlEscape(oauthError);
+    html += F("</div>");
   }
 
-  if (!entraConfigured()) {
-    html += "<hr><h2>Configura Microsoft</h2><p>Inserisci Tenant ID e Client ID nella sezione qui sotto, quindi salva la configurazione.</p>";
-  } else if (deviceLoginPending) {
-    html += "<hr><h2>Accedi a Microsoft</h2><p>Apri il link e inserisci il codice:</p>";
-    html += "<p><a target='_blank' href='" + htmlEscape(verificationUri) + "'>Apri Microsoft Device Login</a></p>";
-    html += "<p class='code'>" + htmlEscape(userCode) + "</p>";
-    html += "<p class='muted'>Lascia acceso questo dispositivo durante l'autorizzazione.</p>";
-  } else if (!graphReady) {
-    html += "<hr><p>Microsoft non è ancora collegato.</p>";
-    html += "<form method='post' action='/login'><button>Collega Microsoft</button></form>";
+  if (deviceLoginPending) {
+    html += F("<section class='card section login-box'><div class='eyebrow'>AUTENTICAZIONE MICROSOFT</div>"
+              "<h2 style='margin:4px 0 6px;font-size:19px'>Completa l'accesso</h2>"
+              "<p class='muted'>Apri la pagina Microsoft, inserisci il codice visualizzato e conferma l'accesso all'account aziendale.</p>"
+              "<p><a href='");
+    html += htmlEscape(verificationUri);
+    html += F("' target='_blank' rel='noopener'>Apri Microsoft Device Login ↗</a></p><div class='code'>");
+    html += htmlEscape(userCode);
+    html += F("</div><p class='muted'>Il codice viene verificato automaticamente. Lascia acceso l'ESP32.</p></section>");
+  } else if (presenceReady) {
+    html += F("<section class='card account-card'><div class='account-copy'><span class='account-mark'>✓</span>"
+              "<div><strong>Account Microsoft collegato</strong><small>");
+    html += htmlEscape(authUser);
+    html += F(" · Microsoft Graph risponde correttamente</small></div></div>"
+              "<form method='post' action='/logout' onsubmit=\"return confirm('Vuoi scollegare l’account Microsoft?')\">"
+              "<button class='button danger' type='submit'>Disconnetti</button></form></section>");
+  } else if (entraConfigured()) {
+    html += F("<section class='card account-card pending'><div class='account-copy'><span class='account-mark'>!</span>"
+              "<div><strong>Account non operativo</strong><small>Collega o autorizza nuovamente l'account Microsoft per leggere la presenza.</small></div></div>"
+              "<form method='post' action='/login'><button class='button primary' type='submit'>Collega Microsoft →</button></form></section>");
   } else {
-    html += "<hr><p>Account Microsoft collegato.</p>";
-    html += "<form method='post' action='/logout'><button>Disconnetti account</button></form>";
+    html += F("<section class='card account-card pending'><div class='account-copy'><span class='account-mark'>!</span>"
+              "<div><strong>Configurazione necessaria</strong><small>Inserisci Tenant ID e Client ID per iniziare.</small></div></div></section>");
   }
 
-  html += F("<hr><p class='muted'>Wi-Fi: ");
-  html += WiFi.isConnected() ? "connesso" : "disconnesso";
-  html += "</p><p class='muted'>Stato LED: " +
-          (manualState.length() ? "manuale (" + manualState + ")" : String("automatico")) +
-          " &middot; aggiornamento ogni " + String(pollIntervalMs / 1000UL) + " s</p>";
+  html += entraSettingsHtml();
   html += settingsFormHtml();
-  html += F("<hr><h2>Rete Wi-Fi</h2><p class='muted'>Rete attuale: ");
-  html += htmlEscape(WiFi.SSID());
-  html += F("</p><form method='post' action='/wifi' "
-            "onsubmit=\"return confirm('Il dispositivo si riavvia e apre il portale Wi-Fi. Continuare?')\">"
-            "<button>Cambia rete Wi-Fi</button></form>");
-  html += F("</main></body></html>");
+
+  html += F("<section class='card section'><div class='section-heading'><span class='section-icon'>NET</span>"
+            "<span class='summary-copy'><strong>Connessione di rete</strong><small>Stato e riconfigurazione Wi-Fi</small></span>"
+            "<span class='pill success'>");
+  html += WiFi.isConnected() ? F("Connesso") : F("Disconnesso");
+  html += F("</span></div><div class='section-body'><div class='network-line'><span>Rete Wi-Fi</span><strong>");
+  html += htmlEscape(WiFi.SSID().length() ? WiFi.SSID() : String("Non disponibile"));
+  html += F("</strong></div><div class='network-line'><span>Indirizzo del dispositivo</span><strong>");
+  html += WiFi.localIP().toString();
+  html += F("</strong></div><form method='post' action='/wifi' onsubmit=\"return confirm('Il dispositivo si riavvia e apre il portale di configurazione Wi-Fi. Continuare?')\">"
+            "<button class='button' style='background:#263653;color:#dce6f8' type='submit'>Cambia rete Wi-Fi</button></form></div></section>"
+            "<footer class='footer'>Teams Presence · Configurazione locale ESP32</footer></div></body></html>");
   return html;
 }
-
 void handleRoot() {
   server.send(200, "text/html; charset=utf-8", pageHtml());
 }
@@ -435,6 +544,7 @@ void handleEntraSave() {
     accessToken = "";
     tokenExpiryEpoch = 0;
     graphReady = false;
+    presenceReady = false;
     deviceLoginPending = false;
     deviceCode = "";
     userCode = "";
@@ -507,6 +617,7 @@ void handleLogout() {
   refreshToken = "";
   accessToken = "";
   graphReady = false;
+  presenceReady = false;
   authUser = "Non autenticato";
   presenceText = "Account scollegato";
   activityText = "-";
@@ -636,6 +747,7 @@ void pollPresence() {
   if (nowEpoch > 1700000000UL && nowEpoch >= tokenExpiryEpoch) {
     if (!refreshAccessToken()) {
       graphReady = false;
+      presenceReady = false;
       presenceText = "Sessione scaduta: riconnettere Microsoft";
       if (!manualState.length()) {
         setLedPattern(WAITING_MICROSOFT_PATTERN,
@@ -649,6 +761,7 @@ void pollPresence() {
   String response;
   int status = 0;
   if (!httpsRequest(graphPresenceUrl, "GET", "", accessToken, response, status)) {
+    presenceReady = false;
     presenceText = "Errore connessione Graph";
     setErrorBlink();
     return;
@@ -657,6 +770,7 @@ void pollPresence() {
   if (status == 401) {
     if (!refreshAccessToken()) {
       graphReady = false;
+      presenceReady = false;
       presenceText = "Autenticazione richiesta";
       if (!manualState.length()) {
         setLedPattern(WAITING_MICROSOFT_PATTERN,
@@ -665,10 +779,16 @@ void pollPresence() {
       }
       return;
     }
-    if (!httpsRequest(graphPresenceUrl, "GET", "", accessToken, response, status)) return;
+    if (!httpsRequest(graphPresenceUrl, "GET", "", accessToken, response, status)) {
+      presenceReady = false;
+      presenceText = "Errore connessione Graph";
+      setErrorBlink();
+      return;
+    }
   }
 
   if (status != 200) {
+    presenceReady = false;
     presenceText = "Graph HTTP " + String(status);
     setErrorBlink();
     return;
@@ -676,6 +796,7 @@ void pollPresence() {
 
   JsonDocument doc;
   if (deserializeJson(doc, response)) {
+    presenceReady = false;
     presenceText = "JSON Graph non valido";
     setErrorBlink();
     return;
@@ -684,6 +805,7 @@ void pollPresence() {
   String availability = doc["availability"] | "Unknown";
   activityText = doc["activity"] | "Unknown";
   presenceText = availability;
+  presenceReady = (availability != "Unknown" && availability.length() > 0);
   applyPresenceColor(availability);
   lastPresencePoll = millis();
 }
