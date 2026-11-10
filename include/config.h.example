@@ -2,7 +2,9 @@
 
 // Microsoft Entra Tenant ID and Client ID are configured and saved from the device web page.
 
-// WS2812B
+// Supported 3-channel addressable LEDs: WS2812B or SK6812 RGB.
+// SK6812 RGBW requires a dedicated 4-channel output configuration.
+#define LED_CHIPSET WS2812B
 #define LED_PIN 18
 #define LED_COUNT 8
 #define LED_BRIGHTNESS 80

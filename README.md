@@ -52,7 +52,7 @@ A standalone, Wi-Fi connected presence indicator powered by ESP32, Microsoft Gra
 
 ## Overview
 
-The ESP32 connects to Wi-Fi, authenticates directly with Microsoft Entra ID, and periodically queries Microsoft Graph for the presence of the signed-in user. The returned status is translated into a colour on the WS2812B LED strip.
+The ESP32 connects to Wi-Fi, authenticates directly with Microsoft Entra ID, and periodically queries Microsoft Graph for the presence of the signed-in user. The returned status is translated into a colour and optional animation on a configurable WS2812B or SK6812 RGB LED installation.
 
 ![Teams Presence system architecture](docs/images/architecture.svg)
 
@@ -63,7 +63,7 @@ The ESP32 connects to Wi-Fi, authenticates directly with Microsoft Entra ID, and
 2. The user completes Microsoft Device Code sign-in.
 3. The firmware obtains and refreshes delegated OAuth tokens.
 4. Microsoft Graph returns the signed-in user's presence.
-5. FastLED updates the WS2812B strip to reflect the current status.
+5. The LED renderer maps the current status to the configured LED layout and effect; the output driver sends the resulting frame.
 
 </details>
 
@@ -74,13 +74,13 @@ The ESP32 connects to Wi-Fi, authenticates directly with Microsoft Entra ID, and
 - **Microsoft sign-in:** OAuth 2.0 Device Code Flow with a single-tenant Microsoft Entra application.
 - **Presence retrieval:** reads the signed-in user's status through Microsoft Graph `GET /v1.0/me/presence`.
 - **Automatic refresh:** stores the OAuth refresh token in ESP32 NVS and uses it to renew access tokens.
-- **Addressable LEDs:** drives WS2812B LEDs through GPIO18 using FastLED.
+- **Addressable LEDs:** drives WS2812B or SK6812 RGB LEDs through GPIO18 using FastLED behind a separate renderer.\n- **Configurable LED layouts:** strip, ring, or 2D matrix with serpentine or linear matrix wiring.\n- **Presence animations:** static, pulse, rainbow, wave, comet, rotation, and radar effects, rendered without blocking delays.
 - **Local control panel:** view connection and presence information, connect or disconnect Microsoft, and configure the device.
 - **Persistent settings:** LED count, brightness, polling interval, and manual LED state are saved in NVS.
 - **Build automation:** GitHub Actions builds versioned firmware, publishes releases, and generates OTA update metadata.
 - **Wireless updates:** check for new releases and install firmware from the local device dashboard over verified HTTPS, with SHA-256 validation.
 
-The local control panel currently supports a configurable LED count (1–300), brightness, and presence polling interval (10–3,600 seconds). The default polling interval is 60 seconds.
+The local control panel supports LED count (1–300), brightness, polling interval (10–3,600 seconds), geometry, animation, and matrix dimensions/mapping. LED layout and effect settings are saved in ESP32 NVS. The default polling interval is 60 seconds.
 
 ## Hardware
 
@@ -90,7 +90,7 @@ The local control panel currently supports a configurable LED count (1–300), b
 |---|---|
 | Controller | ESP32 DevKit with ESP32-WROOM-32D module |
 | Firmware target | PlatformIO `esp32dev` |
-| LED type | WS2812B RGB addressable LEDs |
+| LED type | WS2812B or SK6812 RGB addressable LEDs (3-channel) |
 | LED data pin | GPIO18 |
 | Default LED count | 8 |
 | Flash layout | Custom 4 MB partition table |
@@ -132,11 +132,11 @@ See [docs/wiring.md](docs/wiring.md) for the wiring reference.
 | Wi-Fi ready, waiting for Microsoft configuration or login | 🔵 Slow blue pulse |
 | Microsoft Device Code sign-in pending | 🟣 Purple pulse |
 | Graph/API error | 🩷 Three magenta flashes, repeating |
-| Available | 🟢 Solid green |
-| Busy | 🔴 Solid red |
-| Do Not Disturb | 🟣 Solid purple |
-| Away | 🟡 Solid yellow |
-| Be Right Back | 🟠 Solid orange |
+| Available | 🟢 Green (selected animation) |
+| Busy | 🔴 Red (selected animation) |
+| Do Not Disturb | 🟣 Purple (selected animation) |
+| Away | 🟡 Yellow (selected animation) |
+| Be Right Back | 🟠 Orange (selected animation) |
 | Offline | ⚫ Off |
 
 The diagnostic patterns are shown during boot and Wi-Fi provisioning, even when a manual LED state was saved. After Wi-Fi connects, a saved manual state resumes taking priority over automatic presence changes. Select **Automatic** in the local control panel to return to Teams-based indication.
@@ -340,6 +340,9 @@ A successful CI build confirms compilation and packaging, not physical operation
 ├── scripts/
 │   └── package_firmware.py    # Packages binaries and manifest
 ├── src/
+│   ├── led/
+│   │   ├── LedRenderer.h      # LED geometry and effect interface
+│   │   └── LedRenderer.cpp    # Non-blocking animation renderer
 │   └── main.cpp               # ESP32 firmware
 ├── partitions.csv             # Custom 4 MB partition table
 └── platformio.ini              # PlatformIO environment and dependencies
