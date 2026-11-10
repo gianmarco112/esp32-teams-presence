@@ -53,3 +53,8 @@ Gli offset dell'esempio sono quelli comunemente usati dalle build ESP32 Arduino/
 - Il browser deve supportare Web Serial. Safari e iOS non sono supportati per questo flusso.
 - Questa prima versione non è ancora collaudata con i binari reali del firmware. Prima della distribuzione agli utenti occorre compilare il progetto, preparare una GitHub Release con i quattro file richiesti e provare il flash su una scheda di test.
 - Il flash non può essere verificato senza un dispositivo collegato fisicamente.
+
+
+## Firmware updates over Wi-Fi
+
+After installing a firmware build with OTA support once over USB, future releases can be installed from the ESP32 local dashboard. Open the device page, use **Aggiornamento firmware → Controlla aggiornamenti**, then choose **Aggiorna firmware**. Keep the device powered during the download and automatic restart. The device checks the firmware size and SHA-256 digest before installing it into the inactive OTA application slot. Wi-Fi credentials and saved device settings are retained.
