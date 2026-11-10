@@ -43,7 +43,7 @@ jobs:
           # Release files are downloaded server-side and served by Pages.
           # This avoids browser CORS restrictions on GitHub release-asset URLs.
           gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-            --jq '.[] | select(.draft == false and .prerelease == false) | select(any(.assets[]; .name == "manifest.json")) | .tag_name' |
+            --jq '.[] | select(.draft == false) | select(any(.assets[]; .name == "manifest.json")) | .tag_name' |
           while IFS= read -r tag; do
             if [[ ! "$tag" =~ ^[A-Za-z0-9._-]+$ ]]; then
               echo "Skipping release with unsupported tag name: $tag"
