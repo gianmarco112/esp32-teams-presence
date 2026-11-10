@@ -1,5 +1,3 @@
-import { ESPLoader, Transport } from "esptool-js";
-
 const OWNER = "gianmarco112";
 const REPO = "esp32-teams-presence";
 const API = `https://api.github.com/repos/${OWNER}/${REPO}/releases`;
@@ -10,6 +8,33 @@ let previewReleases = [];
 let latestRelease = null;
 let transport = null;
 let esploader = null;
+let esptoolModulePromise = null;
+
+function loadEsptoolModule() {
+  if (!esptoolModulePromise) {
+    // Load the large, third-party flasher only when the user starts an install.
+    esptoolModulePromise = import("esptool-js").catch((error) => {
+      esptoolModulePromise = null;
+      throw new Error(`Impossibile caricare il modulo di flash da unpkg: ${error.message}`);
+    });
+  }
+  return esptoolModulePromise;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("Timeout: GitHub non ha risposto entro 12 secondi. Riprova tra poco.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 function setStatus(message, type = "") {
   const el = $("status");
@@ -37,7 +62,10 @@ function assetFor(release, name) {
 
 async function loadReleases() {
   try {
-    const response = await fetch(API, { headers: { Accept: "application/vnd.github+json" } });
+    setStatus("Recupero delle versioni firmware da GitHub…");
+    const response = await fetchWithTimeout(API, {
+      headers: { Accept: "application/vnd.github+json" }
+    });
     if (!response.ok) throw new Error(`GitHub API: HTTP ${response.status}`);
     const published = (await response.json()).filter((release) => !release.draft);
     releases = published.filter((release) => !release.prerelease);
@@ -168,6 +196,8 @@ async function installRelease(release) {
     setProgress(0, `Installazione ${release.tag_name}`, "Seleziona la porta USB dell’ESP32.");
     // requestPort must be called directly from the user's click, before any awaited fetch.
     const selectedPort = await navigator.serial.requestPort();
+    setProgress(1, "Preparazione", "Caricamento del modulo di flash…");
+    const { ESPLoader, Transport } = await loadEsptoolModule();
     const { manifest, url: manifestUrl } = await fetchManifest(release);
     if (!manifest.builds?.length) throw new Error("Manifest non valido: nessun build trovato.");
     const build = manifest.builds[0];
